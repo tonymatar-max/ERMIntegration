@@ -1,0 +1,19 @@
+# Site block to ADD to this server's EXISTING Caddyfile (the one already
+# serving the Freshdesk sync app) — do not install a second Caddy instance,
+# just append this block alongside the existing site(s) in the same file.
+#
+# 1. Replace erm.yourdomain.com with ERM's real (sub)domain — must already
+#    point at this server's public IP via an A/AAAA record.
+# 2. Install the ERM Windows Service bound to localhost only, since Caddy
+#    is the only thing that should be reachable from the internet:
+#      .\service\install_service.ps1 -BindHost 127.0.0.1
+#    (port defaults to 9020 — already distinct from the Freshdesk app's 45837)
+# 3. Append the block below to the existing Caddyfile, then reload Caddy
+#    (e.g. `caddy reload --config <path-to-Caddyfile>`, or restart its
+#    Windows service) — no need to touch the Freshdesk app's existing block.
+# 4. Firewall: nothing new to open — 80/443 are already open for the
+#    Freshdesk app's Caddy. Just make sure 9020 is NOT opened externally.
+
+erm.yourdomain.com {
+    reverse_proxy localhost:9020
+}

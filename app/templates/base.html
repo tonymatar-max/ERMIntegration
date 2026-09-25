@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}ERM{% endblock %}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  /* Seidor brand palette — navy/blue, matched from seidor.com (header text
+     #07153A, primary buttons #263C7A, accent highlight #66B6FF), Poppins
+     for type. Kept in sync with dashboard_template.html/pp_report.html's
+     own token blocks (those pages are styled separately). */
+  :root {
+    color-scheme: light;
+    --seidor-navy: #07153a;
+    --seidor-blue: #263c7a;
+    --seidor-blue-dark: #1a2c5c;
+    --seidor-accent: #66b6ff;
+    --seidor-bg: #f5f7fb;
+    --seidor-border: #dfe4ee;
+    --seidor-ink-soft: #5b6478;
+  }
+  body { font-family: "Poppins", -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--seidor-bg); margin:0; color:var(--seidor-navy); }
+  .topbar { background:var(--seidor-navy); color:#fff; padding:0.75rem 1.5rem; display:flex; justify-content:space-between; align-items:center; }
+  .topbar a { color:#fff; text-decoration:none; margin-left:1rem; font-size:0.9rem; opacity:0.85; }
+  .topbar a:hover { opacity:1; text-decoration:underline; }
+  .wrap { max-width:520px; margin:3rem auto; background:#fff; border:1px solid var(--seidor-border); border-radius:0.75rem; padding:2rem; box-shadow:0 1px 3px rgba(7,21,58,0.06); }
+  .wrap.wide { max-width:640px; }
+  h1 { font-size:1.3rem; margin-top:0; font-weight:600; color:var(--seidor-navy); }
+  label { display:block; font-size:0.85rem; font-weight:600; margin:0.9rem 0 0.3rem; }
+  input, select { width:100%; padding:0.55rem 0.7rem; border:1px solid var(--seidor-border); border-radius:0.4rem; font-size:0.95rem; box-sizing:border-box; font-family:inherit; }
+  button, .btn { margin-top:1.3rem; padding:0.6rem 1.2rem; background:var(--seidor-blue); color:#fff; border:none; border-radius:0.4rem; font-size:0.95rem; cursor:pointer; text-decoration:none; display:inline-block; font-family:inherit; }
+  button:hover, .btn:hover { background:var(--seidor-blue-dark); }
+  button.secondary, .btn.secondary { background:#eef1f4; color:var(--seidor-navy); }
+  button.secondary:hover, .btn.secondary:hover { background:#e3e8f0; }
+  .msg { padding:0.6rem 0.8rem; border-radius:0.4rem; font-size:0.85rem; margin-bottom:0.5rem; }
+  .msg.error { background:#fdecea; color:#a4262c; border:1px solid #f3c6c6; }
+  .msg.ok { background:#eaf3fb; color:var(--seidor-blue); border:1px solid #c9def5; }
+  .hint { font-size:0.78rem; color:var(--seidor-ink-soft); margin-top:0.3rem; }
+  .row { display:flex; gap:0.75rem; }
+  .row > * { flex:1; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <strong>Seidor &mdash; Project Ledger</strong>
+  <div>
+    {% if user %}
+      <span>{{ user.username }}{% if user.is_admin %} (admin){% endif %}</span>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/pp-report">PP Report</a>
+      <a href="/resource-planning">Resource Planning</a>
+      <a href="/utilization-report">Utilization Report</a>
+      <a href="/settings">Settings</a>
+      {% if user.is_admin %}
+        <a href="/app-settings">App Settings</a>
+        <a href="/admin/countries">Countries</a>
+        <a href="/admin/employees">Employees</a>
+        <a href="/admin/pp-report-months">PP Report Data</a>
+        <a href="/admin/users">Users</a>
+        <a href="/admin/log" target="_blank" rel="noopener">Log</a>
+      {% endif %}
+      <a href="/logout">Log out</a>
+    {% else %}
+      <a href="/login">Log in</a>
+    {% endif %}
+  </div>
+</div>
+{% block content %}{% endblock %}
+<script>
+// Every timestamp the app stores/transmits is UTC ISO — converted to the
+// viewer's own PC/browser local time here, in one place, rather than each
+// page re-implementing it. Usage: <span class="local-time" data-utc-iso="{{ iso_value }}" data-empty="Never">…</span>
+// Add data-format="full" for "DD MMM YYYY HH:MM:SS" (24h, with seconds) —
+// used for "Report generated"; everything else defaults to a shorter form.
+function formatLocalTimestamps(root) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const pad2 = n => String(n).padStart(2, '0');
+  (root || document).querySelectorAll('.local-time[data-utc-iso], .local-time[data-empty]').forEach(el => {
+    const iso = el.dataset.utcIso;
+    const d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) {
+      el.textContent = el.dataset.empty || 'Never';
+      return;
+    }
+    if (el.dataset.format === 'full') {
+      el.textContent = `${pad2(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    } else {
+      el.textContent = d.toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+    }
+  });
+}
+document.addEventListener('DOMContentLoaded', () => formatLocalTimestamps());
+</script>
+</body>
+</html>

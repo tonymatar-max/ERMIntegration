@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Users &mdash; ERM{% endblock %}
+{% block content %}
+<div class="wrap wide">
+  <h1>Users</h1>
+  <p class="hint">This is the only way to create accounts &mdash; public self-registration is disabled. Give people their username/password directly; they can't sign up on their own.</p>
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+
+  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
+        <th style="padding:0.5rem 0.4rem;">Username</th>
+        <th style="padding:0.5rem 0.4rem;">Role</th>
+        <th style="padding:0.5rem 0.4rem;">Created</th>
+        <th style="padding:0.5rem 0.4rem;">Project Manager</th>
+        <th style="padding:0.5rem 0.4rem;">Reset password</th>
+        <th style="padding:0.5rem 0.4rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr style="border-bottom:1px solid #eef1f4;">
+        <td style="padding:0.5rem 0.4rem;">{{ u.username }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ "Admin" if u.is_admin else "User" }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ u.created_on }}</td>
+        <td style="padding:0.5rem 0.4rem;">
+          {% if u.is_admin %}
+            <span class="hint" style="margin:0;">n/a &mdash; admins see every project</span>
+          {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/manager" style="display:flex; gap:0.4rem; margin:0;">
+              <input type="text" name="manager_id" value="{{ u.manager_id }}" placeholder="All projects" style="width:8rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
+              <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem;">Save</button>
+            </form>
+          {% endif %}
+        </td>
+        <td style="padding:0.5rem 0.4rem;">
+          <form method="post" action="/admin/users/{{ u.id }}/reset-password" style="display:flex; gap:0.4rem; margin:0;">
+            <input type="password" name="new_password" placeholder="New password" minlength="8" required style="width:auto; padding:0.35rem 0.5rem; font-size:0.85rem;">
+            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem;">Reset</button>
+          </form>
+        </td>
+        <td style="padding:0.5rem 0.4rem;">
+          <form method="post" action="/admin/users/{{ u.id }}/delete" style="margin:0;" onsubmit="return confirm('Delete user \'{{ u.username }}\'? This cannot be undone.');">
+            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem; color:#a4262c;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">Project Manager restricts a regular user to only that Redmine Project Manager id's projects, everywhere in the app (Dashboard, Time Analysis, PP Report). Leave blank for "all projects" (today's behavior). Admins are never restricted.</p>
+
+  <h1 style="margin-top:2rem;">Add user</h1>
+  <form method="post" action="/admin/users">
+    <label>Username</label>
+    <input type="text" name="username" required autofocus>
+    <label>Password</label>
+    <input type="password" name="password" minlength="8" required>
+    <label>Confirm password</label>
+    <input type="password" name="password2" minlength="8" required>
+    <label>Project Manager id (optional)</label>
+    <input type="text" name="manager_id" placeholder="e.g. 3252 — leave blank for all projects">
+    <p class="hint">Restricts this user to only this Redmine Project Manager id's projects. Ignored if "Grant admin" is checked.</p>
+    <label style="display:flex; align-items:center; gap:0.5rem; font-weight:400;">
+      <input type="checkbox" name="is_admin" value="1" style="width:auto;">
+      Grant admin (sees and manages everything, unrestricted)
+    </label>
+    <button type="submit">Create user</button>
+  </form>
+</div>
+{% endblock %}

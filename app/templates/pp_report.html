@@ -1,0 +1,1460 @@
+{% extends "base.html" %}
+{% block title %}PP Report &mdash; ERM{% endblock %}
+{% block content %}
+<div style="max-width:1700px;margin:0 auto;padding:24px 20px;">
+
+{% if not has_settings %}
+  <div class="msg error">This app's shared Redmine connection isn't configured yet. Ask an admin to set it up under App Settings.</div>
+{% else %}
+
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    /* Seidor brand palette — see dashboard_template.html's token block for
+       the source colors; kept in sync here since this page is scoped
+       separately (#pp-scope) rather than sharing :root with the Dashboard. */
+    #pp-scope {
+      --paper: #f5f7fb; --paper-raised: #ffffff; --ink: #07153a; --ink-soft: #445071; --ink-faint: #8892ab;
+      --border: #dfe4ee; --border-strong: #c3cbdd; --accent: #263c7a; --accent-soft: #263c7a14; --accent-ink: #ffffff;
+      --good: #1e7a4f; --good-soft: #1e7a4f16; --warn: #b8792e; --warn-soft: #b8792e18; --warn-soft-opaque: #f3ecdd;
+      --stale: #c0392b; --stale-soft: #c0392b16; --row-hover: #eef1f8;
+      font-family: "Poppins", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+    }
+    /* base.html sets a global `button { margin-top: 1.3rem }` (sized for
+       its own standalone forms) that would otherwise leak into every
+       button here and throw off alignment in toolbars/flex rows — reset
+       it up front so every button in this page positions purely from its
+       own rule. */
+    #pp-scope button { margin: 0; }
+    #pp-scope h1 { font-family: "Poppins", Arial, sans-serif; font-weight: 500; font-size: clamp(20px,2.2vw,26px); letter-spacing:-0.01em; margin: 0 0 4px; color: var(--ink); }
+    #pp-scope .subtitle { color: var(--ink-soft); font-size: 13px; margin: 0; }
+    #pp-scope header.pp-head { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; flex-wrap:wrap; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:16px; }
+
+    #pp-scope .pp-toolbar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+    #pp-scope .pp-field { display:flex; flex-direction:column; gap:3px; }
+    #pp-scope .pp-field label { font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); font-weight:600; }
+    #pp-scope .pp-field input[type="month"], #pp-scope .pp-field input.rate, #pp-scope .pp-field select {
+      padding:7px 10px; border:1px solid var(--border-strong); border-radius:6px; font-size:13px; background:var(--paper-raised); color:var(--ink);
+      font-family: "IBM Plex Mono", monospace;
+    }
+    #pp-scope .pp-field select { font-family:"Poppins", sans-serif; max-width:180px; }
+    #pp-scope .pp-field input.rate { width:6rem; }
+    #pp-scope #pp-search { padding:7px 12px; border:1px solid var(--border-strong); border-radius:6px; font-size:13px; min-width:220px; background:var(--paper-raised); color:var(--ink); }
+    #pp-scope .pp-badge-wrap { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+    #pp-scope .pp-badge { padding:4px 12px; border-radius:999px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; align-self:flex-end; }
+    #pp-scope .pp-badge.locked { background:var(--stale-soft); color:var(--stale); }
+    #pp-scope .pp-badge.open { background:var(--good-soft); color:var(--good); }
+    /* "<prev month> not closed yet" — a quiet nudge under the badge, not
+       an error: it's normal for a month to be open before its predecessor
+       is locked, just worth flagging since Prev. Accumulated depends on it. */
+    #pp-scope .pp-badge-sub { margin:0; font-size:11px; color:var(--warn); text-align:right; }
+    #pp-scope .pp-btn { padding:8px 16px; border-radius:6px; font-size:13px; cursor:pointer; border:1px solid var(--border-strong); background:var(--paper-raised); color:var(--ink); align-self:flex-end; text-decoration:none; display:inline-block; line-height:1.2; }
+    #pp-scope .pp-btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+    /* Lock/Reopen is a bigger deal than Save draft — freezes the month's
+       figures permanently (or reverses that) — so it gets its own color
+       rather than blending in with the plain toolbar buttons. */
+    #pp-scope .pp-btn.warn { background:var(--warn); color:var(--accent-ink); border-color:var(--warn); font-weight:600; }
+    #pp-scope .pp-btn.warn:hover:not(:disabled) { background:var(--stale); border-color:var(--stale); }
+    #pp-scope .pp-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    #pp-scope .save-flash { font-size:12px; color:var(--good); align-self:flex-end; padding-bottom:9px; }
+    /* Export-to-Excel progress — xlsx generation runs synchronously
+       server-side (see build_workbook) so there's no real byte-level
+       progress to report; an indeterminate sliding bar just tells the user
+       something is happening rather than the click appearing to do nothing. */
+    #pp-scope .pp-export-progress { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-soft); align-self:flex-end; padding-bottom:9px; }
+    #pp-scope .pp-export-progress[hidden] { display:none; }
+    #pp-scope .pp-export-progress .bar { width:120px; height:6px; border-radius:999px; background:var(--border); overflow:hidden; position:relative; }
+    #pp-scope .pp-export-progress .bar::after {
+      content:""; position:absolute; top:0; left:0; height:100%; width:40%; border-radius:999px;
+      background:var(--accent); animation: pp-export-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes pp-export-slide {
+      0% { left:-40%; }
+      100% { left:100%; }
+    }
+
+    #pp-scope .pp-table-wrap { overflow-x:auto; overflow-y:auto; max-height:70vh; border:1px solid var(--border); border-radius:10px; background:var(--paper-raised); box-shadow: 0 1px 2px rgba(32,29,24,0.04), 0 8px 24px -12px rgba(32,29,24,0.12); }
+    #pp-scope table.pp-table { border-collapse:collapse; width:100%; font-size:13px; white-space:nowrap; }
+    #pp-scope table.pp-table thead th {
+      position:sticky; top:0; background:var(--paper-raised); text-align:right; font-size:10.5px; text-transform:uppercase;
+      letter-spacing:0.06em; color:var(--ink-faint); font-weight:600; padding:11px 14px; border-bottom:1px solid var(--border-strong);
+      cursor:pointer; user-select:none; white-space:nowrap;
+    }
+    #pp-scope table.pp-table thead th.name-col { text-align:left; }
+    #pp-scope table.pp-table thead th:hover { color:var(--ink); }
+    #pp-scope table.pp-table thead th .arrow { margin-left:4px; font-size:9px; }
+    #pp-scope table.pp-table tbody tr { border-bottom:1px solid var(--border); transition: background 100ms ease; }
+    #pp-scope table.pp-table tbody tr:last-child { border-bottom:none; }
+    #pp-scope table.pp-table tbody tr:hover { background:var(--row-hover); }
+    /* Opening-balance-sourced rows (July 2026 only — see pp_report.py's
+       OPENING_BALANCE_MONTH) — highlighted so it's obvious at a glance
+       which projects came from opening_balance.csv vs. were computed
+       normally (and, by omission, which CSV rows are missing). */
+    /* Opaque, not the translucent --warn-soft used elsewhere — a
+       translucent background on a `position: sticky` frozen cell lets
+       whatever's scrolled underneath it show through, which looked like
+       overlapping/ghosted text when scrolling this table sideways. */
+    #pp-scope table.pp-table tbody tr.ob-row td { background:var(--warn-soft-opaque); }
+    #pp-scope table.pp-table tbody tr.ob-row td.freeze-col { background:var(--warn-soft-opaque); }
+    #pp-scope table.pp-table tbody tr.ob-row:hover td { background:var(--row-hover); }
+    #pp-scope .ob-legend-swatch { display:inline-block; width:11px; height:11px; border-radius:3px; background:var(--warn-soft-opaque); border:1px solid var(--warn); vertical-align:middle; margin-right:6px; }
+    #pp-scope table.pp-table td { padding:10px 14px; vertical-align:top; text-align:right; font-family:"IBM Plex Mono", monospace; font-size:12.5px; }
+    #pp-scope table.pp-table td.id-cell { color:var(--ink-faint); }
+    #pp-scope table.pp-table td.name-cell { text-align:left; white-space:normal; min-width:230px; font-family:"Poppins",sans-serif; font-size:13px; }
+    #pp-scope table.pp-table td.name-cell .rcode { font-size:11px; color:var(--ink-faint); font-family:"IBM Plex Mono", monospace; margin-top:2px; }
+    #pp-scope table.pp-table td.notes-cell { text-align:left; white-space:normal; min-width:200px; }
+
+    /* Freeze ID/Project/Country while scrolling right — left offsets are
+       computed in JS (setFreezeColumnOffsets()) from each column's actual
+       rendered width, since the table isn't fixed-layout. */
+    #pp-scope table.pp-table .freeze-col { position:sticky; z-index:2; background:var(--paper-raised); }
+    #pp-scope table.pp-table thead th.freeze-col { z-index:4; }
+    #pp-scope table.pp-table .freeze-1 { left:0; }
+    #pp-scope table.pp-table .freeze-2 { left:var(--freeze-col1-w, 70px); }
+    #pp-scope table.pp-table .freeze-3 { left:var(--freeze-col2-w, 300px); box-shadow:2px 0 4px -2px rgba(32,29,24,0.15); }
+    #pp-scope table.pp-table tbody tr:hover .freeze-col { background:var(--row-hover); }
+    #pp-scope table.pp-table input.rev-input, #pp-scope table.pp-table input.risk-input { width:8rem; text-align:right; padding:5px 7px; border:1px solid var(--border-strong); border-radius:5px; font-size:12.5px; font-family:"IBM Plex Mono", monospace; background:var(--paper-raised); color:var(--ink); }
+    #pp-scope table.pp-table input.risk-input { width:6rem; }
+    #pp-scope table.pp-table input.completion-input { width:6rem; text-align:right; padding:5px 7px; border:1px solid var(--border-strong); border-radius:5px; font-size:12.5px; font-family:"IBM Plex Mono", monospace; background:var(--paper-raised); color:var(--ink); }
+    #pp-scope table.pp-table input.completion-input::placeholder { color:var(--ink-faint); }
+    #pp-scope .completion-cell { display:flex; align-items:center; gap:6px; justify-content:flex-end; }
+    #pp-scope .completion-display { font-family:"IBM Plex Mono", monospace; }
+    #pp-scope .completion-toggle {
+      /* base.html's global `button { margin-top: 1.3rem }` would otherwise
+         leak in here and push this out of vertical alignment with its
+         sibling text in the flex row. */
+      flex:none; width:22px; height:22px; margin:0; padding:0; border-radius:5px; border:1px solid var(--border-strong);
+      background:var(--paper-raised); color:var(--ink-soft); cursor:pointer; font-size:12px; line-height:1;
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+    #pp-scope .completion-toggle:hover:not(:disabled) { background:var(--row-hover); color:var(--ink); }
+    #pp-scope .completion-toggle:disabled { opacity:0.5; cursor:default; }
+    /* Manual override — same accent used for the warn/edited states elsewhere,
+       so a glance down the column shows which rows are hand-overridden. */
+    #pp-scope tr[data-completionmode="manual"] .completion-toggle { border-color:var(--warn); color:var(--warn); background:var(--warn-soft); }
+    #pp-scope table.pp-table input.notes-input { width:100%; box-sizing:border-box; padding:5px 7px; border:1px solid var(--border-strong); border-radius:5px; font-size:12.5px; font-family:"Poppins", sans-serif; background:var(--paper-raised); color:var(--ink); }
+    #pp-scope table.pp-table input:disabled { background:var(--paper); color:var(--ink-faint); }
+    #pp-scope .pp-pos { color:var(--good); } #pp-scope .pp-neg { color:var(--stale); }
+    #pp-scope .pp-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+    #pp-scope .pp-pill.yes { background:var(--good-soft); color:var(--good); }
+    #pp-scope .pp-pill.no { background:var(--warn-soft); color:var(--warn); }
+    #pp-scope .pp-count-note { font-size:12px; color:var(--ink-faint); margin:2px 2px 10px; }
+    #pp-scope .pp-hint { font-size:12px; color:var(--ink-faint); margin-top:10px; }
+    #pp-scope .pp-hint code { font-family:"IBM Plex Mono", monospace; background:var(--accent-soft); padding:1px 5px; border-radius:4px; }
+
+    #pp-scope .filter-chip {
+      font-family: "Poppins", sans-serif; font-size: 12.5px; font-weight: 500; padding: 8px 13px; border-radius: 8px;
+      border: 1px solid var(--border-strong); background: var(--paper-raised); color: var(--ink-soft); cursor: pointer;
+      white-space: nowrap; transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+    #pp-scope .filter-chip:hover { background: var(--row-hover); }
+    #pp-scope .filter-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    #pp-scope .filter-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #pp-scope .chip-divider { width: 1px; align-self: stretch; background: var(--border-strong); margin: 2px 2px; }
+    #pp-scope .toggle-chip {
+      font-family: "Poppins", sans-serif; font-size: 12.5px; font-weight: 500; padding: 8px 13px; border-radius: 8px;
+      border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 6px; transition: background 120ms ease, color 120ms ease;
+    }
+    #pp-scope .toggle-chip:hover { background: var(--accent-soft); }
+    #pp-scope .toggle-chip.active { background: var(--accent); color: var(--accent-ink); }
+    #pp-scope .toggle-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #pp-scope .toggle-chip .tc-dot { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
+    #pp-scope .toggle-chip.active .tc-dot { background: currentColor; }
+    #pp-scope .toggle-chip.warn { border-color: var(--stale); color: var(--stale); }
+    #pp-scope .toggle-chip.warn:hover { background: var(--stale-soft); }
+    #pp-scope .toggle-chip.warn.active { background: var(--stale); color: var(--accent-ink); }
+    #pp-scope .trend { display:inline-block; margin-left:5px; font-size:11px; }
+    #pp-scope .trend.up { color:var(--good); } #pp-scope .trend.down { color:var(--stale); } #pp-scope .trend.nodata { color:var(--ink-faint); }
+    /* Negative Amount to Take means the project's been overpaid relative
+       to what it's actually earned so far — flagged as something to fix,
+       not just a routine "down" trend. */
+    #pp-scope .amt-negative { color:var(--stale); font-weight:700; background:var(--stale-soft); padding:2px 6px; border-radius:5px; }
+    /* Estimated/Spent/Total Revenue that changed vs. last month — worth a
+       second look (Estimated/Total Revenue shouldn't normally move month
+       to month; Spent should never go down), but not necessarily wrong
+       the way a negative Amount to Take is, so a distinct (amber) color. */
+    #pp-scope .val-flag { color:var(--warn); font-weight:700; }
+    #pp-scope input.val-flag-input { border-color:var(--warn); background:var(--warn-soft); }
+
+    #pp-scope .pp-stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+    #pp-scope .pp-stat { flex:1; min-width:150px; background:var(--paper-raised); border:1px solid var(--border); border-radius:10px; padding:12px 16px; }
+    #pp-scope .pp-stat-value { font-family:"IBM Plex Mono", monospace; font-size:20px; font-weight:600; color:var(--ink); }
+    #pp-scope .pp-stat-label { font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); font-weight:600; margin-top:2px; }
+
+    #pp-scope .pp-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; }
+    #pp-scope .pp-tab-btn {
+      font-family:"Poppins", sans-serif; font-size:13.5px; font-weight:600; color:var(--ink-faint); background:none; border:none;
+      padding:10px 4px; margin-right:20px; cursor:pointer; border-bottom:2px solid transparent; position:relative; top:1px;
+    }
+    #pp-scope .pp-tab-btn:hover { color:var(--ink); }
+    #pp-scope .pp-tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+    #pp-scope .pp-summary-layout { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+    #pp-scope .pp-summary-table-wrap { flex:2; min-width:340px; }
+    #pp-scope .pp-pie-wrap { flex:1; min-width:280px; background:var(--paper-raised); border:1px solid var(--border); border-radius:10px; padding:18px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+    #pp-scope .pp-pie-wrap svg { width:220px; height:220px; }
+    #pp-scope .pp-pie-legend { width:100%; font-size:12.5px; display:flex; flex-direction:column; gap:6px; }
+    #pp-scope .pp-pie-legend-row { display:flex; align-items:center; gap:8px; }
+    #pp-scope .pp-pie-swatch { width:11px; height:11px; border-radius:3px; flex:none; }
+    #pp-scope .pp-pie-legend-label { flex:1; color:var(--ink-soft); }
+    #pp-scope .pp-pie-legend-pct { font-family:"IBM Plex Mono", monospace; color:var(--ink); }
+    #pp-scope table.pp-summary-table td, #pp-scope table.pp-summary-table th { white-space:nowrap; }
+    #pp-scope table.pp-summary-table td.name-cell { white-space:normal; }
+  </style>
+
+  <div id="pp-scope">
+    <header class="pp-head">
+      <div>
+        <h1>Monthly PP Report</h1>
+        <p class="subtitle">Earned revenue by project for <strong>{{ month }}</strong>{% if fetched_on %} &middot; Report generated <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on }}"></span>{% endif %}</p>
+      </div>
+      {% if report %}
+        <div class="pp-badge-wrap" id="pp-badge-wrap">
+          <span class="pp-badge {{ 'locked' if report.locked else 'open' }}" id="pp-status-badge">{{ 'Locked' if report.locked else 'Open' }}</span>
+          <p class="pp-badge-sub" id="pp-badge-sub" {{ '' if not prev_month_locked else 'hidden' }}>
+            {% if prev_month_reopened_by %}
+              {{ prev_month_label }} was reopened by {{ prev_month_reopened_by }} <span class="local-time" data-utc-iso="{{ prev_month_reopened_on }}"></span> — figures below are provisional until it's re-locked.
+            {% else %}
+              {{ prev_month_label }} not closed yet
+            {% endif %}
+          </p>
+        </div>
+      {% endif %}
+    </header>
+
+    {% if report %}
+    <div class="pp-tabs">
+      <button type="button" class="pp-tab-btn active" data-tab="report">Report</button>
+      <button type="button" class="pp-tab-btn" data-tab="summary">Summary</button>
+      <button type="button" class="pp-tab-btn" data-tab="performance">Performance</button>
+      <button type="button" class="pp-tab-btn" data-tab="profitability">Profitability</button>
+    </div>
+    {% endif %}
+
+    <div id="pp-tab-report">
+    {% if report %}
+    <div class="pp-stats">
+      <div class="pp-stat"><div class="pp-stat-value" id="stat-totalRevenue">{{ "{:,.0f}".format(totals.totalRevenue) }}</div><div class="pp-stat-label">Total Revenue</div></div>
+      <div class="pp-stat"><div class="pp-stat-value" id="stat-previousAccumulated">{{ "{:,.0f}".format(totals.previousAccumulated) }}</div><div class="pp-stat-label">Prev. Accumulated</div></div>
+      <div class="pp-stat"><div class="pp-stat-value" id="stat-accumulated">{{ "{:,.0f}".format(totals.accumulated) }}</div><div class="pp-stat-label">Accumulated</div></div>
+      <div class="pp-stat"><div class="pp-stat-value" id="stat-amountToBeTaken">{{ "{:,.0f}".format(totals.amountToBeTaken) }}</div><div class="pp-stat-label">Amount to Take</div></div>
+    </div>
+    {% endif %}
+
+    <div class="pp-toolbar">
+      <div class="pp-field">
+        <label for="pp-month">Month</label>
+        <input type="month" id="pp-month" value="{{ month }}">
+      </div>
+      <!-- Hidden: Sales/Cost/Profitability columns now use each project's
+           country's Daily Rate (Countries admin screen) instead of one
+           shared month-level rate, so this no longer needs to be user-facing.
+           Left in the DOM (just hidden) since it still feeds set_daily_rate
+           as the fallback rate for a project whose country isn't configured. -->
+      <div class="pp-field" style="display:none;">
+        <label for="pp-rate">Daily rate</label>
+        <input type="number" step="0.01" class="rate" id="pp-rate" value="{{ report.daily_rate if report else '' }}" {{ 'disabled' if report and report.locked else '' }}>
+      </div>
+      <div class="pp-field">
+        <label for="pp-search">Search</label>
+        <input type="text" id="pp-search" placeholder="Filter by ID, project, or rapport code&hellip;">
+      </div>
+      <div class="pp-field">
+        <label for="pp-filter-country">Country</label>
+        <select id="pp-filter-country"><option value="">All</option></select>
+      </div>
+      <div class="pp-field">
+        <label for="pp-filter-pm">Project Manager</label>
+        <select id="pp-filter-pm"><option value="">All</option></select>
+      </div>
+      {% if report %}
+        {% if not report.locked %}
+          <button class="pp-btn primary" id="pp-save-draft-btn">Save draft</button>
+        {% endif %}
+        <button class="pp-btn" id="pp-export-btn" type="button" data-month="{{ month }}">Export to Excel</button>
+        <span class="pp-export-progress" id="pp-export-progress" hidden><span class="bar"></span>Generating report&hellip;</span>
+        {% if report.locked %}
+          <button class="pp-btn warn" id="pp-unlock-btn" {% if unlock_blocked_reason %}disabled title="{{ unlock_blocked_reason }}"{% endif %}>Reopen this month</button>
+        {% else %}
+          <button class="pp-btn warn" id="pp-lock-btn" {% if lock_blocked_reason %}disabled title="{{ lock_blocked_reason }}"{% endif %}>Lock this month</button>
+        {% endif %}
+      {% endif %}
+      <span id="pp-save-flash" class="save-flash"></span>
+    </div>
+
+    {% if report %}
+    <div class="pp-toolbar">
+      <button class="filter-chip active" data-filter="all">All projects</button>
+      <button class="filter-chip" data-filter="fully-earned">Fully Earned</button>
+      <button class="filter-chip" data-filter="not-fully-earned">Not Fully Earned</button>
+      <span class="chip-divider"></span>
+      <button class="toggle-chip" id="pp-earned-month-toggle" type="button" aria-pressed="false" title="Layer on top of the filter chip above — narrows whatever's currently selected down to projects with a non-zero Amount to Take (including negative — an overrun worth flagging).">
+        <span class="tc-dot"></span>Earned this month
+      </button>
+      <button class="toggle-chip warn" id="pp-negative-amount-toggle" type="button" aria-pressed="false" title="Layer on top of the filter chip above — narrows whatever's currently selected down to projects with a negative Amount to Take (an overrun worth fixing).">
+        <span class="tc-dot"></span>Negative Amount to Take
+      </button>
+    </div>
+    {% endif %}
+
+    {% if report and is_opening_balance_month %}
+    <p class="pp-hint" style="margin-top:0;margin-bottom:14px;">
+      <span class="ob-legend-swatch"></span>Highlighted rows use <code>opening_balance.csv</code>'s figures directly (Risk/Total Revenue/Accumulated/Amount to Take), since this app has no Redmine-tracked history for {{ month }}.
+      Unhighlighted rows have no opening balance in the CSV and are computed normally &mdash; check those against the CSV if that's unexpected. Editing and saving a highlighted row's Risk/Total Revenue switches it to normal computation too.
+    </p>
+    {% endif %}
+
+    {% if report %}
+    <p class="pp-count-note" id="pp-count-note"></p>
+    <div class="pp-table-wrap">
+      <table class="pp-table" id="pp-table">
+        <thead>
+          <tr>
+            <th class="freeze-col freeze-1" data-key="projectId" data-type="num">ID</th>
+            <th class="name-col freeze-col freeze-2" data-key="name" data-type="str">Project</th>
+            <th class="freeze-col freeze-3" data-key="country" data-type="str">Country</th>
+            <th data-key="managerName" data-type="str">PM</th>
+            <th data-key="estimated" data-type="num">Estimated</th>
+            <th data-key="spent" data-type="num">Spent</th>
+            <th data-key="risk" data-type="num">Risk</th>
+            <th data-key="totalRevenue" data-type="num">Total Revenue</th>
+            <th data-key="previousAccumulated" data-type="num">Prev. Accumulated</th>
+            <th data-key="accumulated" data-type="num">Accumulated</th>
+            <th data-key="amountToBeTaken" data-type="num">Amount to Take</th>
+            <th data-key="fullyEarned" data-type="str">Fully Earned</th>
+            <th data-key="yetToEarn" data-type="num">Yet to Earn</th>
+            <th data-key="remainingPct" data-type="num">Remaining %</th>
+            <th data-key="salesSoldProfit" data-type="num">Sales Sold Profit %</th>
+            <th data-key="salesExpectedProfit" data-type="num">Sales Expected Profit</th>
+            <th data-key="projectTimeProfitability" data-type="num">Project Time Profitability %</th>
+            <th data-key="costTillDate" data-type="num">Cost till Date</th>
+            <th data-key="profitTillDate" data-type="num">Profit till Date</th>
+            <th data-key="amountProfitability" data-type="num">Project Amount Profitability %</th>
+            <th data-key="completion" data-type="num">Project Completion %</th>
+            <th data-key="expectedProfitability" data-type="num">Expected Profitability %</th>
+            <th class="name-col">Notes</th>
+          </tr>
+        </thead>
+        <tbody id="pp-tbody">
+          {% for row in report.rows %}
+          {% set trend = "nodata" %}
+          {% if row.previousAmountToBeTaken is not none %}
+            {% if row.amountToBeTaken > row.previousAmountToBeTaken %}{% set trend = "up" %}
+            {% elif row.amountToBeTaken < row.previousAmountToBeTaken %}{% set trend = "down" %}
+            {% else %}{% set trend = "equal" %}{% endif %}
+          {% endif %}
+          {% set estimated_changed = row.previousEstimated is not none and (row.estimated or 0)|round(1) != row.previousEstimated|round(1) %}
+          {% set spent_decreased = row.previousSpent is not none and (row.spent or 0)|round(1) < row.previousSpent|round(1) %}
+          {% set revenue_changed = row.previousTotalRevenue is not none and (row.totalRevenue if row.totalRevenue is not none else 0)|round(2) != row.previousTotalRevenue|round(2) %}
+          <tr class="{{ 'ob-row' if is_opening_balance_month and row.fromOpeningBalance else '' }}" data-project-id="{{ row.projectId }}"
+              data-name="{{ row.displayId or row.projectId }} {{ (row.name or '')|lower }} {{ (row.rapportCode or '')|lower }} {{ (row.country or '')|lower }}"
+              data-country="{{ row.country or '' }}"
+              data-manager="{{ row.managerName or '' }}"
+              data-estimated="{{ row.estimated or 0 }}" data-spent="{{ row.spent or 0 }}" data-risk="{{ row.risk or 0 }}"
+              data-totalrevenue="{{ row.totalRevenue or 0 }}" data-previousaccumulated="{{ row.previousAccumulated or 0 }}"
+              data-accumulated="{{ row.accumulated or 0 }}" data-amounttobetaken="{{ row.amountToBeTaken or 0 }}"
+              data-fullyearned="{{ 'yes' if row.fullyEarned else 'no' }}" data-yettoearn="{{ row.yetToEarn or 0 }}"
+              data-remainingpct="{{ row.remainingPct or 0 }}" data-profittilldate="{{ row.profitTillDate or 0 }}"
+              data-completion="{{ row.completion or 0 }}" data-projectid="{{ row.projectId }}"
+              data-previousamounttobetaken="{{ '' if row.previousAmountToBeTaken is none else row.previousAmountToBeTaken }}"
+              data-previoustotalrevenue="{{ '' if row.previousTotalRevenue is none else row.previousTotalRevenue }}"
+              data-dailyrate="{{ row.dailyRate if row.dailyRate is not none else report.daily_rate }}"
+              data-salessoldprofit="{{ row.salesSoldProfit or 0 }}" data-salesexpectedprofit="{{ row.salesExpectedProfit or 0 }}"
+              data-projecttimeprofitability="{{ row.projectTimeProfitability or 0 }}" data-costtilldate="{{ row.costTillDate or 0 }}"
+              data-amountprofitability="{{ row.amountProfitability or 0 }}" data-expectedprofitability="{{ row.expectedProfitability or 0 }}"
+              data-computedcompletion="{{ row.computedCompletion or 0 }}"
+              data-previouscompletion="{{ '' if row.previousCompletion is none else row.previousCompletion }}"
+              data-completionmode="{{ 'manual' if row.completionOverridden else 'auto' }}">
+            <td class="id-cell freeze-col freeze-1"{% if row.excelSource %} title="{% if row.carriedOver %}Carried over from last month — this month's KSA workbook hasn't been imported yet, so nothing is earned so far{% else %}Read from the uploaded Excel workbook (not Redmine) — edit it there and re-upload{% endif %}"{% endif %}>{% if row.excelSource %}{{ row.displayId }}{% else %}#{{ row.projectId }}{% endif %}</td>
+            <td class="name-cell freeze-col freeze-2">{{ row.name }}{% if row.rapportCode %}<div class="rcode">{{ row.rapportCode }}</div>{% endif %}</td>
+            <td class="freeze-col freeze-3">{{ row.country or "" }}</td>
+            <td>{{ row.managerName or "" }}</td>
+            <td><span class="{{ 'val-flag' if estimated_changed else '' }}" title="{% if row.previousEstimated is not none %}Last month: {{ '%.1f'|format(row.previousEstimated) }}{% endif %}">{{ "%.1f"|format(row.estimated or 0) }}</span></td>
+            <td><span class="{{ 'val-flag' if spent_decreased else '' }}" title="{% if row.previousSpent is not none %}Last month: {{ '%.1f'|format(row.previousSpent) }}{% endif %}">{{ "%.1f"|format(row.spent or 0) }}</span></td>
+            <td>
+              <input class="risk-input" type="text" value="{{ '' if row.risk is none else row.risk }}" {{ 'disabled' if report.locked or row.excelSource else '' }}>
+            </td>
+            <td>
+              <input class="rev-input {{ 'val-flag-input' if revenue_changed else '' }}" type="text" value="{{ '' if row.totalRevenue is none else row.totalRevenue }}" placeholder="e.g. 19500+4900" {{ 'disabled' if report.locked or row.excelSource else '' }}>
+            </td>
+            <td class="js-prevAccumulated">{{ "%.0f"|format(row.previousAccumulated or 0) }}</td>
+            <td class="js-accumulated">{{ "%.0f"|format(row.accumulated or 0) }}</td>
+            <td class="js-amountToBeTaken">
+              <span class="{{ 'amt-negative' if (row.amountToBeTaken or 0) < 0 else '' }}">{{ "%.0f"|format(row.amountToBeTaken or 0) }}</span><span class="trend {{ trend }}" title="{% if row.previousAmountToBeTaken is not none %}Last month: {{ '%.0f'|format(row.previousAmountToBeTaken) }}{% else %}No locked figure for last month{% endif %}">{% if trend == 'up' %}&#9650;{% elif trend == 'down' %}&#9660;{% elif trend == 'nodata' %}&#8212;{% endif %}</span>
+            </td>
+            <td class="js-fullyEarned"><span class="pp-pill {{ 'yes' if row.fullyEarned else 'no' }}">{{ 'Yes' if row.fullyEarned else 'No' }}</span></td>
+            <td class="js-yetToEarn">{{ "%.0f"|format(row.yetToEarn or 0) }}</td>
+            <td class="js-remainingPct">{{ "%.1f"|format((row.remainingPct or 0) * 100) }}%</td>
+            <td class="js-salesSoldProfit"><span class="{{ 'pp-neg' if (row.salesSoldProfit or 0) < 0 else '' }}">{{ "%.1f"|format((row.salesSoldProfit or 0) * 100) }}%</span></td>
+            <td class="js-salesExpectedProfit"><span class="{{ 'pp-neg' if (row.salesExpectedProfit or 0) < 0 else '' }}">{{ "%.0f"|format(row.salesExpectedProfit or 0) }}</span></td>
+            <td class="js-projectTimeProfitability">{{ "%.1f"|format((row.projectTimeProfitability or 0) * 100) }}%</td>
+            <td class="js-costTillDate">{{ "%.0f"|format(row.costTillDate or 0) }}</td>
+            <td class="js-profitTillDate"><span class="{{ 'pp-neg' if (row.profitTillDate or 0) < 0 else '' }}">{{ "%.0f"|format(row.profitTillDate or 0) }}</span></td>
+            <td class="js-amountProfitability"><span class="{{ 'pp-neg' if (row.amountProfitability or 0) < 0 else '' }}">{{ "%.1f"|format((row.amountProfitability or 0) * 100) }}%</span></td>
+            <td>
+              <div class="completion-cell">
+                <button type="button" class="completion-toggle" {{ 'disabled' if report.locked or row.excelSource else '' }}
+                    title="{{ 'Manual override — click to switch to Auto (computed)' if row.completionOverridden else 'Auto (computed) — click to override manually' }}">
+                  <span class="completion-icon">{{ '✎' if row.completionOverridden else '⚙' }}</span>
+                </button>
+                <span class="completion-display" style="{{ 'display:none' if row.completionOverridden else '' }}">{{ "%.1f"|format((row.computedCompletion or 0) * 100) }}%</span>
+                <input class="completion-input" type="text"
+                    style="{{ '' if row.completionOverridden else 'display:none' }}"
+                    value="{{ '%.2f'|format(row.completion * 100) if row.completionOverridden else '' }}"
+                    placeholder="{{ '%.1f'|format((row.computedCompletion or 0) * 100) }}"
+                    {{ 'disabled' if report.locked or row.excelSource else '' }}>
+              </div>
+            </td>
+            <td class="js-expectedProfitability"><span class="{{ 'pp-neg' if (row.expectedProfitability or 0) < 0 else '' }}">{{ "%.1f"|format((row.expectedProfitability or 0) * 100) }}%</span></td>
+            <td class="notes-cell">
+              <input class="notes-input" type="text" value="{{ row.notes or '' }}" {{ 'disabled' if report.locked or row.excelSource else '' }}>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="pp-hint">
+      Total Revenue defaults to the project's SAP Order amount (same figure as the Dashboard's "Order amount" column) and accepts a plain number or a "+"-separated sum (e.g. <code>19500+4900</code>).
+      Risk defaults to the value from Redmine but can be overridden here — this override is local to the PP Report only and does not write back to Redmine.
+      Spent is cumulative hours logged through the last day of <strong>{{ month }}</strong>.
+      "Prev. Accumulated" comes from last month's locked figures — lock <strong>{{ prev_month }}</strong> first if it isn't already, otherwise it reads as 0.
+      Sales/Cost/Profitability columns use the <a href="/admin/countries">Daily Rate configured for the project's country</a>, falling back to this month's Daily Rate above if the country isn't set up there.
+      Project Completion is normally computed automatically — click its <span title="Auto (computed)">&#9881;</span>/<span title="Manual override">&#9998;</span> toggle to switch a row to manual and type a percentage (switching back to <span title="Auto (computed)">&#9881;</span> discards it). A row switched to manual with nothing typed yet fills in last month's value as a starting point. Notes always carry forward from <strong>{{ prev_month }}</strong> once it's locked; Project Completion only carries forward if it was a manual override there — a computed value keeps recomputing fresh each month.
+      Edits to Risk/Total Revenue/Project Completion/Notes are <strong>not saved automatically</strong> while you're working — click <strong>Save draft</strong> to keep them without locking. <strong>Locking a month also saves whatever's currently on screen first</strong>, so it's safe to edit and lock in one go; it then permanently commits those figures. If the month is later reopened, your Risk/Total Revenue/Notes/Project Completion come back exactly as they were (no retyping) while every computed figure recalculates fresh from Redmine's current data.
+      Months must be <strong>locked and reopened strictly in order</strong> (oldest first when locking, newest first when reopening) — skipping a month would leave the next one's "Prev. Accumulated" reading 0, wrongly showing its whole Accumulated as this month's Amount to Take.
+    </p>
+    {% endif %}
+    </div>
+
+    {% if report %}
+    <div id="pp-tab-summary" hidden>
+      <p class="pp-hint" style="margin-top:0;margin-bottom:16px;">Country-wise earning for <strong>{{ month }}</strong> — always every project in this report; the Country dropdown and filter chips on the Report tab don't apply here.</p>
+      <div class="pp-summary-layout">
+        <div class="pp-summary-table-wrap">
+          <div class="pp-table-wrap">
+            <table class="pp-table pp-summary-table">
+              <thead>
+                <tr>
+                  <th class="name-col">Country</th>
+                  <th>Earning this month</th>
+                  <th>Earning last month</th>
+                  <th>Earning %</th>
+                </tr>
+              </thead>
+              <tbody id="pp-summary-tbody">
+                {% for entry in country_summary %}
+                <tr>
+                  <td class="name-cell">{{ entry.country }}</td>
+                  <td>{{ "{:,.0f}".format(entry.thisMonth) }}</td>
+                  <td>{{ "{:,.0f}".format(entry.lastMonth) }}</td>
+                  <td>{{ "%.1f"|format(entry.pct) }}%</td>
+                </tr>
+                {% else %}
+                <tr><td class="name-cell" colspan="4">No projects in this report.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="pp-pie-wrap" id="pp-pie-wrap">
+          <div id="pp-pie-content">
+          {% if pie_slices %}
+          <svg viewBox="0 0 200 200">
+            {% for slice in pie_slices %}
+            <path d="{{ slice.path }}" fill="{{ slice.color }}">
+              <title>{{ slice.country }} — {{ "%.1f"|format(slice.pct) }}%</title>
+            </path>
+            {% endfor %}
+          </svg>
+          <div class="pp-pie-legend">
+            {% for slice in pie_slices %}
+            <div class="pp-pie-legend-row">
+              <span class="pp-pie-swatch" style="background:{{ slice.color }};"></span>
+              <span class="pp-pie-legend-label">{{ slice.country }}</span>
+              <span class="pp-pie-legend-pct">{{ "%.1f"|format(slice.pct) }}%</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="pp-hint" style="margin:0;">No earning this month to chart.</p>
+          {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <h1 style="margin-top:2rem;">Summary by country / by project</h1>
+      <div class="pp-toolbar" style="margin-top:0;">
+        <button class="pp-btn" id="pp-country-project-export-btn" type="button" data-month="{{ month }}">Export to Excel</button>
+        <span class="pp-hint" id="pp-country-project-export-progress" hidden>Generating&hellip;</span>
+      </div>
+      <div class="pp-table-wrap">
+        <table class="pp-table pp-summary-table">
+          <thead>
+            <tr>
+              <th class="name-col">Country</th>
+              <th class="name-col">Project</th>
+              <th>Amount to Take</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in country_project_breakdown %}
+              {% for p in entry.projects %}
+              <tr>
+                <td class="name-cell">{{ entry.country if loop.first else '' }}</td>
+                <td class="name-cell">{{ p.name }}{% if p.rapportCode %}<br><span class="pp-hint">{{ p.rapportCode }}</span>{% endif %}</td>
+                <td>{{ "{:,.0f}".format(p.amountToBeTaken) }}</td>
+              </tr>
+              {% endfor %}
+              <tr style="font-weight:600;background:var(--paper-raised);">
+                <td class="name-cell">{{ entry.country }} TOTAL</td>
+                <td class="name-cell"></td>
+                <td>{{ "{:,.0f}".format(entry.subtotal) }}</td>
+              </tr>
+            {% else %}
+            <tr><td class="name-cell" colspan="3">No projects in this report.</td></tr>
+            {% endfor %}
+            {% if country_project_breakdown %}
+            <tr style="font-weight:700;border-top:2px solid var(--border);">
+              <td class="name-cell">GRAND TOTAL</td>
+              <td class="name-cell"></td>
+              <td>{{ "{:,.0f}".format(totals.amountToBeTaken) }}</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if report %}
+    <div id="pp-tab-performance" hidden>
+      <p class="pp-hint" style="margin-top:0;">
+        Revenue-bearing projects for <strong>{{ month }}</strong>, in the old "Projects Performance MENA" workbook layout &mdash;
+        Performance to date / YTD / to go, Completion, Project total and Sales Expected Profit. Filter/sort below, or export everything to Excel and filter there.
+      </p>
+      <div class="pp-toolbar">
+        <div class="pp-field">
+          <label for="perf-search">Search</label>
+          <input type="text" id="perf-search" placeholder="Filter by project or country&hellip;">
+        </div>
+        <div class="pp-field">
+          <label for="perf-country">Country</label>
+          <select id="perf-country">
+            <option value="">All countries</option>
+            {% for c in performance_rows|map(attribute='country')|unique|list %}
+              {% if c %}<option value="{{ c }}">{{ c }}</option>{% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="pp-field">
+          <label for="perf-max-margin">Max Margin% to date</label>
+          <input type="number" id="perf-max-margin" placeholder="e.g. 10" step="1">
+        </div>
+        <button class="pp-btn" id="pp-performance-export-btn" type="button" data-month="{{ month }}">Export to Excel</button>
+        <span class="pp-export-progress" id="pp-performance-export-progress" hidden>Generating&hellip;</span>
+      </div>
+      <p class="pp-hint" id="perf-count-hint" style="margin-top:0;"></p>
+      <div class="pp-table-wrap">
+        <table class="pp-table" id="perf-table">
+          <thead>
+            <tr>
+              <th rowspan="2" class="name-col">Country</th>
+              <th rowspan="2" class="name-col">Project</th>
+              <th colspan="3">Performance to date</th>
+              <th colspan="3">of which performance YTD</th>
+              <th colspan="3">Performance to Go</th>
+              <th rowspan="2">Completion</th>
+              <th rowspan="2">Project total</th>
+              <th rowspan="2">Sales expect Profit</th>
+            </tr>
+            <tr>
+              <th>Revenue</th><th>Margin</th><th>Margin%</th>
+              <th>Revenue</th><th>Margin</th><th>Margin%</th>
+              <th>Revenue</th><th>Margin</th><th>Margin%</th>
+            </tr>
+          </thead>
+          <tbody id="perf-tbody">
+            {% for r in performance_rows %}
+            <tr data-country="{{ r.country|lower }}" data-project="{{ r.project|lower }}" data-margin-pct="{{ '%.4f'|format(r.marginPctToDate * 100) }}">
+              <td class="name-cell">{{ r.country }}</td>
+              <td class="name-cell">{{ r.project }}</td>
+              <td>{{ "{:,.0f}".format(r.revToDate) }}</td>
+              <td>{{ "{:,.0f}".format(r.marginToDate) }}</td>
+              <td>{{ "%.1f"|format(r.marginPctToDate * 100) }}%</td>
+              <td>{{ "{:,.0f}".format(r.revYtd) }}</td>
+              <td>{{ "{:,.0f}".format(r.marginYtd) }}</td>
+              <td>{{ "%.1f"|format(r.marginPctYtd * 100) }}%</td>
+              <td>{{ "{:,.0f}".format(r.revToGo) }}</td>
+              <td>{{ "{:,.0f}".format(r.marginToGo) }}</td>
+              <td>{{ "%.1f"|format(r.marginPctToGo * 100) }}%</td>
+              <td>{{ "%.0f"|format(r.completion * 100) }}%</td>
+              <td>{{ "{:,.0f}".format(r.projectTotal) }}</td>
+              <td>{{ "{:,.0f}".format(r.salesExpectProfit) }}</td>
+            </tr>
+            {% else %}
+            <tr><td class="name-cell" colspan="14">No revenue-bearing projects in this report.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if report %}
+    <div id="pp-tab-profitability" hidden>
+      <p class="pp-hint" style="margin-top:0;">
+        Same layout as the old manual "Project Profatibility MonYY.xlsx" workbook (Data + Summary sheets) &mdash; uses today's
+        <a href="/admin/countries">per-country Daily Rate</a>, not yet the per-<a href="/admin/employees">consultant hourly rate</a>.
+      </p>
+      <div class="pp-toolbar">
+        <div class="pp-field">
+          <label for="profit-search">Search</label>
+          <input type="text" id="profit-search" placeholder="Filter by project, PEP code, or country&hellip;">
+        </div>
+        <button class="pp-btn" id="pp-profitability-export-btn" type="button" data-month="{{ month }}">Export to Excel</button>
+        <span class="pp-export-progress" id="pp-profitability-export-progress" hidden>Generating&hellip;</span>
+      </div>
+      <p class="pp-hint" id="profit-count-hint" style="margin-top:0;"></p>
+      <div class="pp-table-wrap">
+        <table class="pp-table">
+          <thead>
+            <tr>
+              <th class="name-col">Country</th>
+              <th class="name-col">PEP code</th>
+              <th class="name-col">Project</th>
+              <th>Estimated</th>
+              <th>Spent</th>
+              <th>Total Revenue</th>
+              <th>Total Earning</th>
+              <th>Sales Sold Profit</th>
+              <th>Sales Expected Profit</th>
+              <th>Cost till date</th>
+              <th>Profit till date</th>
+              <th>Profitability %</th>
+              <th>Completion</th>
+              <th>Expected Profitability</th>
+              <th>Total est. cost</th>
+              <th>Remaining %</th>
+              <th>Remaining Cost</th>
+              <th>Margin by end</th>
+            </tr>
+          </thead>
+          <tbody id="profit-tbody">
+            {% for r in profitability_rows %}
+            <tr data-search="{{ (r.country ~ ' ' ~ r.rapportCode ~ ' ' ~ r.name)|lower }}">
+              <td class="name-cell">{{ r.country }}</td>
+              <td class="name-cell">{{ r.rapportCode }}</td>
+              <td class="name-cell">{{ r.name }}</td>
+              <td>{{ "%.1f"|format(r.estimated) }}</td>
+              <td>{{ "%.1f"|format(r.spent) }}</td>
+              <td>{{ "{:,.0f}".format(r.totalRevenue) }}</td>
+              <td>{{ "{:,.0f}".format(r.totalEarning) }}</td>
+              <td>{{ "%.1f"|format(r.salesSoldProfit * 100) }}%</td>
+              <td>{{ "{:,.0f}".format(r.salesExpectedProfit) }}</td>
+              <td>{{ "{:,.0f}".format(r.costTillDate) }}</td>
+              <td>{{ "{:,.0f}".format(r.profitTillDate) }}</td>
+              <td>{{ "%.1f"|format(r.profitabilityPct * 100) }}%</td>
+              <td>{{ "%.0f"|format(r.completion * 100) }}%</td>
+              <td>{{ "%.1f"|format(r.expectedProfitability * 100) }}%</td>
+              <td>{{ "{:,.0f}".format(r.totalEstimatedCost) }}</td>
+              <td>{{ "%.0f"|format(r.remainingCompletionPct * 100) }}%</td>
+              <td>{{ "{:,.0f}".format(r.remainingCost) }}</td>
+              <td>{{ "{:,.0f}".format(r.totalMarginByEndOfProject) }}</td>
+            </tr>
+            {% else %}
+            <tr><td class="name-cell" colspan="18">No projects in this report.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h1 style="margin-top:2rem;">Summary by country</h1>
+      <div class="pp-table-wrap">
+        <table class="pp-table pp-summary-table">
+          <thead>
+            <tr>
+              <th class="name-col">Country</th>
+              <th>Sum of Cost till date</th>
+              <th>Sum of Profit till date</th>
+              <th>Sum of Total Earning</th>
+              <th>Profit %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in profitability_country_summary %}
+            <tr {{ 'style="font-weight:600;border-top:2px solid #dde3e8;"' if entry.country == 'Grand Total' else '' }}>
+              <td class="name-cell">{{ entry.country }}</td>
+              <td>{{ "{:,.0f}".format(entry.cost) }}</td>
+              <td>{{ "{:,.0f}".format(entry.profit) }}</td>
+              <td>{{ "{:,.0f}".format(entry.earning) }}</td>
+              <td>{{ "%.1f"|format(entry.profitPct * 100) }}%</td>
+            </tr>
+            {% else %}
+            <tr><td class="name-cell" colspan="5">No projects in this report.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+{% endif %}
+</div>
+
+<script>
+(function() {
+  const month = "{{ month }}";
+  const monthInput = document.getElementById('pp-month');
+  if (!monthInput) return;
+
+  monthInput.addEventListener('change', () => {
+    window.location.href = '/pp-report?month=' + monthInput.value;
+  });
+
+  // ---------- Poll for another user locking/reopening a DIFFERENT month ----------
+  // A lock/reopen elsewhere (e.g. the previous month getting reopened while
+  // this one's still open) isn't otherwise visible until a manual reload —
+  // this keeps the "provisional" banner and the Lock/Reopen buttons'
+  // enabled state current without one. Report figures themselves are NOT
+  // live-refreshed this way (that would yank numbers out from under
+  // someone mid-edit) — only the status banner/buttons.
+  const hasReport = document.getElementById('pp-badge-wrap') !== null;
+  if (hasReport) {
+    (function pollLockStatus() {
+      setTimeout(async () => {
+        try {
+          const resp = await fetch(`/api/pp-report/${month}/lock-status`);
+          if (resp.ok) {
+            const s = await resp.json();
+            const badgeWrap = document.getElementById('pp-badge-wrap');
+            const badge = document.getElementById('pp-status-badge');
+            const sub = document.getElementById('pp-badge-sub');
+            if (badge) {
+              badge.textContent = s.locked ? 'Locked' : 'Open';
+              badge.classList.toggle('locked', s.locked);
+              badge.classList.toggle('open', !s.locked);
+            }
+            if (sub) {
+              sub.hidden = !!s.prev_month_locked;
+              if (!s.prev_month_locked) {
+                sub.textContent = s.prev_month_reopened_by
+                  ? `${s.prev_month_label} was reopened by ${s.prev_month_reopened_by} — figures below are provisional until it's re-locked.`
+                  : `${s.prev_month_label} not closed yet`;
+              }
+            }
+            const lockBtn = document.getElementById('pp-lock-btn');
+            if (lockBtn) {
+              lockBtn.disabled = !!s.lock_blocked_reason;
+              lockBtn.title = s.lock_blocked_reason || '';
+            }
+            const unlockBtn = document.getElementById('pp-unlock-btn');
+            if (unlockBtn) {
+              unlockBtn.disabled = !!s.unlock_blocked_reason;
+              unlockBtn.title = s.unlock_blocked_reason || '';
+            }
+          }
+        } catch (e) { /* transient network hiccup — just try again next tick */ }
+        pollLockStatus();
+      }, 20000);
+    })();
+  }
+
+  // ---------- Freeze ID/Project/Country columns while scrolling right ----------
+  // The table isn't fixed-layout, so the first two frozen columns' widths
+  // (and hence the next column's left offset) vary with content — measured
+  // from the actual rendered header cells rather than hard-coded.
+  function setFreezeColumnOffsets() {
+    const ppTable = document.getElementById('pp-table');
+    if (!ppTable) return;
+    const headerCells = ppTable.querySelectorAll('thead th.freeze-col');
+    if (headerCells.length < 2) return;
+    const w1 = headerCells[0].getBoundingClientRect().width;
+    const w2 = headerCells[1].getBoundingClientRect().width;
+    ppTable.style.setProperty('--freeze-col1-w', w1 + 'px');
+    ppTable.style.setProperty('--freeze-col2-w', (w1 + w2) + 'px');
+  }
+  setFreezeColumnOffsets();
+  window.addEventListener('resize', setFreezeColumnOffsets);
+
+  const flash = document.getElementById('pp-save-flash');
+  function showSaved(msg) {
+    flash.style.color = 'var(--good)';
+    flash.textContent = msg || 'Saved';
+    setTimeout(() => { flash.textContent = ''; }, 1500);
+  }
+  function showError(msg) {
+    flash.style.color = 'var(--stale)';
+    flash.textContent = 'Error: ' + msg;
+  }
+
+  const tbody = document.getElementById('pp-tbody');
+
+  // Header stat tiles always reflect the currently visible (filtered) rows.
+  function recomputeTotals() {
+    if (!tbody) return;
+    const totals = {totalrevenue: 0, previousaccumulated: 0, accumulated: 0, amounttobetaken: 0};
+    tbody.querySelectorAll('tr').forEach(tr => {
+      if (tr.style.display === 'none') return;
+      totals.totalrevenue += parseFloat(tr.dataset.totalrevenue) || 0;
+      totals.previousaccumulated += parseFloat(tr.dataset.previousaccumulated) || 0;
+      totals.accumulated += parseFloat(tr.dataset.accumulated) || 0;
+      totals.amounttobetaken += parseFloat(tr.dataset.amounttobetaken) || 0;
+    });
+    const fmt = n => Math.round(n).toLocaleString();
+    document.getElementById('stat-totalRevenue').textContent = fmt(totals.totalrevenue);
+    document.getElementById('stat-previousAccumulated').textContent = fmt(totals.previousaccumulated);
+    document.getElementById('stat-accumulated').textContent = fmt(totals.accumulated);
+    document.getElementById('stat-amountToBeTaken').textContent = fmt(totals.amounttobetaken);
+  }
+
+  // ---------- Live recalculation on Total Revenue / Risk edits ----------
+  // Mirrors pp_report.py's compute_row() exactly so editing either field
+  // updates Accumulated/Amount to Take/Fully Earned/etc. immediately,
+  // without waiting for Save draft + a page reload.
+  function parseRevenueInput(text) {
+    text = (text || '').trim();
+    if (!text) return null;
+    if (text.includes('+')) {
+      return text.split('+').map(p => p.trim()).filter(Boolean).reduce((sum, p) => sum + (parseFloat(p) || 0), 0);
+    }
+    const n = parseFloat(text);
+    return Number.isNaN(n) ? null : n;
+  }
+
+  function computeRowClient(g, h, j, k, m, dailyRate, completionOverride) {
+    g = g || 0; h = h || 0; j = j || 0; m = m || 0;
+    if (k === null) {
+      return {
+        totalRevenue: 0, accumulated: 0, amountToBeTaken: 0, fullyEarned: false, yetToEarn: 0, remainingPct: 0,
+        salesSoldProfit: 0, salesExpectedProfit: 0, projectTimeProfitability: 0, costTillDate: 0,
+        profitTillDate: 0, amountProfitability: 0, completion: completionOverride ?? 0, computedCompletion: 0,
+        expectedProfitability: 0,
+      };
+    }
+    const safeDiv = (num, den) => den ? num / den : 0;
+    const ratioAmount = safeDiv(h - j, g) * k;
+    let accumulated = (h - j) >= g ? k : ratioAmount;
+    accumulated = Math.ceil(accumulated);
+
+    const amountToBeTaken = accumulated - m;
+    const fullyEarned = (k - accumulated) < 1;
+    const yetToEarn = k - accumulated;
+    const remainingPct = safeDiv(yetToEarn, k);
+
+    // Mirrors pp_report.py's _profitability_fields() — dailyRate here is
+    // the project's *country* rate (see tr.dataset.dailyrate), not
+    // necessarily the month's shared rate.
+    const salesSoldProfit = k ? (1 - safeDiv(dailyRate * g / 8, k)) : 0;
+    const salesExpectedProfit = k * salesSoldProfit;
+    const projectTimeProfitability = safeDiv(g - h, g);
+    const costTillDate = dailyRate / 8 * h;
+    const profitTillDate = k - costTillDate;
+    const amountProfitability = safeDiv(profitTillDate, k);
+    const computedCompletion = fullyEarned ? 1.0 : safeDiv(accumulated, k);
+    const completion = (completionOverride === null || completionOverride === undefined) ? computedCompletion : completionOverride;
+    const expectedProfitability = completion ? safeDiv(k - safeDiv(costTillDate, completion), k) : 0;
+
+    return {
+      totalRevenue: k, accumulated, amountToBeTaken, fullyEarned, yetToEarn, remainingPct,
+      salesSoldProfit, salesExpectedProfit, projectTimeProfitability, costTillDate,
+      profitTillDate, amountProfitability, completion, computedCompletion, expectedProfitability,
+    };
+  }
+
+  function recalcRow(tr) {
+    const g = parseFloat(tr.dataset.estimated) || 0;
+    const h = parseFloat(tr.dataset.spent) || 0;
+    const riskInput = tr.querySelector('.risk-input');
+    const revInput = tr.querySelector('.rev-input');
+    const completionInput = tr.querySelector('.completion-input');
+    const j = riskInput ? (parseFloat(riskInput.value) || 0) : 0;
+    const k = revInput ? parseRevenueInput(revInput.value) : 0;
+    const m = parseFloat(tr.dataset.previousaccumulated) || 0;
+    const dailyRate = parseFloat(tr.dataset.dailyrate) || 0;
+    // Only the Manual toggle state makes the input's value count as an
+    // override — a leftover value in a hidden/Auto-mode input (e.g. after
+    // toggling back to Auto) must not silently keep affecting the result.
+    const isManual = tr.dataset.completionmode === 'manual';
+    const completionText = (isManual && completionInput) ? completionInput.value.trim() : '';
+    const completionOverride = completionText === '' ? null : (parseFloat(completionText) || 0) / 100;
+
+    const r = computeRowClient(g, h, j, k, m, dailyRate, completionOverride);
+
+    tr.dataset.risk = j;
+    tr.dataset.totalrevenue = r.totalRevenue;
+    tr.dataset.accumulated = r.accumulated;
+    tr.dataset.amounttobetaken = r.amountToBeTaken;
+    tr.dataset.fullyearned = r.fullyEarned ? 'yes' : 'no';
+    tr.dataset.yettoearn = r.yetToEarn;
+    tr.dataset.remainingpct = r.remainingPct;
+    tr.dataset.salessoldprofit = r.salesSoldProfit;
+    tr.dataset.salesexpectedprofit = r.salesExpectedProfit;
+    tr.dataset.projecttimeprofitability = r.projectTimeProfitability;
+    tr.dataset.costtilldate = r.costTillDate;
+    tr.dataset.profittilldate = r.profitTillDate;
+    tr.dataset.amountprofitability = r.amountProfitability;
+    tr.dataset.completion = r.completion;
+    tr.dataset.computedcompletion = r.computedCompletion;
+    tr.dataset.expectedprofitability = r.expectedProfitability;
+    if (completionInput) completionInput.placeholder = (r.computedCompletion * 100).toFixed(1);
+
+    const fmt0 = n => Math.round(n).toLocaleString();
+    tr.querySelector('.js-accumulated').textContent = fmt0(r.accumulated);
+
+    const prevAmt = tr.dataset.previousamounttobetaken;
+    // 'equal' deliberately renders no arrow at all — a dash there reads as
+    // "went down", confusable with the amt-negative styling on the number
+    // itself. The dash is reserved for genuinely missing prior data.
+    let trendCls = 'nodata', trendArrow = '&#8212;', trendTitle = 'No locked figure for last month';
+    if (prevAmt !== '') {
+      const prevAmtNum = parseFloat(prevAmt);
+      trendTitle = `Last month: ${fmt0(prevAmtNum)}`;
+      if (r.amountToBeTaken > prevAmtNum) { trendCls = 'up'; trendArrow = '&#9650;'; }
+      else if (r.amountToBeTaken < prevAmtNum) { trendCls = 'down'; trendArrow = '&#9660;'; }
+      else { trendCls = 'equal'; trendArrow = ''; }
+    }
+    const amtCls = r.amountToBeTaken < 0 ? 'amt-negative' : '';
+    tr.querySelector('.js-amountToBeTaken').innerHTML =
+      `<span class="${amtCls}">${fmt0(r.amountToBeTaken)}</span><span class="trend ${trendCls}" title="${trendTitle}">${trendArrow}</span>`;
+
+    // Total Revenue changed vs. last month — same live-edit treatment as
+    // the amount-to-take flag above.
+    const prevRevenue = tr.dataset.previoustotalrevenue;
+    if (revInput) {
+      const changed = prevRevenue !== '' && Math.round((r.totalRevenue || 0) * 100) !== Math.round(parseFloat(prevRevenue) * 100);
+      revInput.classList.toggle('val-flag-input', changed);
+    }
+
+    tr.querySelector('.js-fullyEarned').innerHTML =
+      `<span class="pp-pill ${r.fullyEarned ? 'yes' : 'no'}">${r.fullyEarned ? 'Yes' : 'No'}</span>`;
+    tr.querySelector('.js-yetToEarn').textContent = fmt0(r.yetToEarn);
+    tr.querySelector('.js-remainingPct').textContent = (r.remainingPct * 100).toFixed(1) + '%';
+    // These profit/profitability figures highlight red when negative (see
+    // the pp-neg class) — each lives in an inner <span> rather than the
+    // <td> directly so the class can be toggled without disturbing the text.
+    function setNegValue(selector, text, value) {
+      const span = tr.querySelector(selector);
+      span.textContent = text;
+      span.classList.toggle('pp-neg', value < 0);
+    }
+    setNegValue('.js-salesSoldProfit span', (r.salesSoldProfit * 100).toFixed(1) + '%', r.salesSoldProfit);
+    setNegValue('.js-salesExpectedProfit span', fmt0(r.salesExpectedProfit), r.salesExpectedProfit);
+    tr.querySelector('.js-projectTimeProfitability').textContent = (r.projectTimeProfitability * 100).toFixed(1) + '%';
+    tr.querySelector('.js-costTillDate').textContent = fmt0(r.costTillDate);
+    setNegValue('.js-profitTillDate span', fmt0(r.profitTillDate), r.profitTillDate);
+    setNegValue('.js-amountProfitability span', (r.amountProfitability * 100).toFixed(1) + '%', r.amountProfitability);
+    setNegValue('.js-expectedProfitability span', (r.expectedProfitability * 100).toFixed(1) + '%', r.expectedProfitability);
+    const completionDisplay = tr.querySelector('.completion-display');
+    if (completionDisplay) completionDisplay.textContent = (r.computedCompletion * 100).toFixed(1) + '%';
+
+    recomputeTotals();
+    renderSummaryTab();
+  }
+
+  // ---------- Project Completion: Auto/Manual toggle ----------
+  // Auto shows the formula-derived value (read-only); Manual reveals the
+  // editable input, pre-filled with last month's value as a starting point
+  // if this row hasn't been touched yet this month (the input is empty).
+  function setCompletionMode(tr, mode) {
+    const btn = tr.querySelector('.completion-toggle');
+    const icon = btn ? btn.querySelector('.completion-icon') : null;
+    const input = tr.querySelector('.completion-input');
+    const display = tr.querySelector('.completion-display');
+    tr.dataset.completionmode = mode;
+
+    if (mode === 'manual') {
+      if (icon) icon.textContent = '✎';
+      if (btn) btn.title = 'Manual override — click to switch to Auto (computed)';
+      if (input) input.style.display = '';
+      if (display) display.style.display = 'none';
+      const prev = tr.dataset.previouscompletion;
+      if (input && !input.value.trim() && prev !== '' && prev !== undefined) {
+        input.value = (parseFloat(prev) * 100).toFixed(2);
+      }
+    } else {
+      if (icon) icon.textContent = '⚙';
+      if (btn) btn.title = 'Auto (computed) — click to override manually';
+      if (input) input.style.display = 'none';
+      if (display) display.style.display = '';
+    }
+    recalcRow(tr);
+  }
+
+  if (tbody) {
+    tbody.querySelectorAll('.completion-toggle').forEach(btn => {
+      if (btn.disabled) return;
+      btn.addEventListener('click', () => {
+        const tr = btn.closest('tr');
+        setCompletionMode(tr, tr.dataset.completionmode === 'manual' ? 'auto' : 'manual');
+      });
+    });
+  }
+
+  if (tbody) {
+    tbody.querySelectorAll('.rev-input, .risk-input, .completion-input').forEach(input => {
+      if (input.disabled) return;
+      input.addEventListener('input', () => recalcRow(input.closest('tr')));
+    });
+  }
+
+  // ---------- Summary tab: country table + pie chart ----------
+  // Rebuilt from the Report tab's row data (always every row, ignoring
+  // its Country dropdown/filter chips) so edits above are reflected here
+  // immediately too, before Save draft is ever clicked.
+  const PIE_PALETTE = ['#0f6e6e', '#b8792e', '#3d7a4f', '#b4482f', '#5b6ee1', '#a15bd1', '#c2554a', '#3f8fbf', '#8a8f2e', '#6c757d'];
+
+  function buildPieSlices(countrySummary) {
+    const total = countrySummary.reduce((sum, e) => sum + (e.thisMonth > 0 ? e.thisMonth : 0), 0);
+    const slices = [];
+    if (total <= 0) return slices;
+    const cx = 100, cy = 100, r = 90;
+    let angle = -90;
+    const positive = countrySummary.filter(e => e.thisMonth > 0);
+    positive.forEach((entry, i) => {
+      const fraction = entry.thisMonth / total;
+      const sweep = fraction * 360;
+      const color = PIE_PALETTE[i % PIE_PALETTE.length];
+      let path;
+      if (fraction >= 0.9999 && positive.length === 1) {
+        path = `M ${cx - r},${cy} A ${r},${r} 0 1 1 ${cx + r},${cy} A ${r},${r} 0 1 1 ${cx - r},${cy} Z`;
+      } else {
+        const startRad = (angle * Math.PI) / 180;
+        const endRad = ((angle + sweep) * Math.PI) / 180;
+        const x1 = cx + r * Math.cos(startRad), y1 = cy + r * Math.sin(startRad);
+        const x2 = cx + r * Math.cos(endRad), y2 = cy + r * Math.sin(endRad);
+        const largeArc = sweep > 180 ? 1 : 0;
+        path = `M ${cx},${cy} L ${x1.toFixed(2)},${y1.toFixed(2)} A ${r},${r} 0 ${largeArc} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
+      }
+      slices.push({ country: entry.country, pct: fraction * 100, path, color });
+      angle += sweep;
+    });
+    return slices;
+  }
+
+  function renderSummaryTab() {
+    const summaryTbody = document.getElementById('pp-summary-tbody');
+    const pieContent = document.getElementById('pp-pie-content');
+    if (!summaryTbody || !tbody) return;
+
+    const byCountry = new Map();
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const country = tr.dataset.country || 'Unspecified';
+      if (!byCountry.has(country)) byCountry.set(country, { country, thisMonth: 0, lastMonth: 0 });
+      const entry = byCountry.get(country);
+      entry.thisMonth += parseFloat(tr.dataset.amounttobetaken) || 0;
+      entry.lastMonth += parseFloat(tr.dataset.previousamounttobetaken) || 0;
+    });
+
+    const totalThisMonth = Array.from(byCountry.values()).reduce((sum, e) => sum + e.thisMonth, 0);
+    const summary = Array.from(byCountry.values()).map(e => ({
+      ...e, pct: totalThisMonth ? (e.thisMonth / totalThisMonth * 100) : 0,
+    })).sort((a, b) => b.thisMonth - a.thisMonth);
+
+    const fmt0 = n => Math.round(n).toLocaleString();
+    summaryTbody.innerHTML = summary.length
+      ? summary.map(e => `
+          <tr>
+            <td class="name-cell">${e.country}</td>
+            <td>${fmt0(e.thisMonth)}</td>
+            <td>${fmt0(e.lastMonth)}</td>
+            <td>${e.pct.toFixed(1)}%</td>
+          </tr>`).join('')
+      : '<tr><td class="name-cell" colspan="4">No projects in this report.</td></tr>';
+
+    const slices = buildPieSlices(summary);
+    if (pieContent) {
+      pieContent.innerHTML = slices.length
+        ? `<svg viewBox="0 0 200 200">${slices.map(s => `<path d="${s.path}" fill="${s.color}"><title>${s.country} — ${s.pct.toFixed(1)}%</title></path>`).join('')}</svg>
+           <div class="pp-pie-legend">${slices.map(s => `
+             <div class="pp-pie-legend-row">
+               <span class="pp-pie-swatch" style="background:${s.color};"></span>
+               <span class="pp-pie-legend-label">${s.country}</span>
+               <span class="pp-pie-legend-pct">${s.pct.toFixed(1)}%</span>
+             </div>`).join('')}</div>`
+        : '<p class="pp-hint" style="margin:0;">No earning this month to chart.</p>';
+    }
+  }
+
+  const rateInput = document.getElementById('pp-rate');
+  if (rateInput && !rateInput.disabled) {
+    rateInput.addEventListener('change', async () => {
+      try {
+        const resp = await fetch(`/api/pp-report/${month}/rate`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({daily_rate: parseFloat(rateInput.value) || 0}),
+        });
+        if (!resp.ok) throw new Error((await resp.json()).detail || 'save failed');
+        showSaved();
+        location.reload(); // rate change affects every row's computed figures
+      } catch (e) { showError(e.message); }
+    });
+  }
+
+  // Shared by the Save draft button and Lock (which auto-saves the current
+  // draft first — see below) so both send identical row payloads.
+  function collectDraftRows() {
+    return Array.from(tbody.querySelectorAll('tr')).filter(tr => parseInt(tr.dataset.projectid, 10) > 0).map(tr => ({
+      project_id: parseInt(tr.dataset.projectid, 10),
+      total_revenue: tr.querySelector('.rev-input')?.value ?? '',
+      risk: tr.querySelector('.risk-input')?.value ?? '',
+      notes: tr.querySelector('.notes-input')?.value ?? '',
+      completion: tr.dataset.completionmode === 'manual' ? (tr.querySelector('.completion-input')?.value ?? '') : '',
+    }));
+  }
+
+  // ---------- Export to Excel (fetch + blob download, with a progress
+  // indicator — xlsx generation is synchronous server-side and can take a
+  // couple seconds for a large report, so a plain <a href> download made
+  // the click look like nothing happened) ----------
+  const exportBtn = document.getElementById('pp-export-btn');
+  const exportProgress = document.getElementById('pp-export-progress');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      if (exportProgress) exportProgress.hidden = false;
+      try {
+        const resp = await fetch(`/pp-report/${exportBtn.dataset.month}/export`);
+        if (!resp.ok) throw new Error(`Export failed (HTTP ${resp.status}).`);
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = /filename="([^"]+)"/.exec(disposition);
+        const filename = match ? match[1] : `PP Report ${exportBtn.dataset.month}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        showError(e.message || 'Export failed.');
+      } finally {
+        exportBtn.disabled = false;
+        if (exportProgress) exportProgress.hidden = true;
+      }
+    });
+  }
+
+  // ---------- Save draft (explicit, batched — not auto-save) ----------
+  const saveDraftBtn = document.getElementById('pp-save-draft-btn');
+  if (saveDraftBtn && tbody) {
+    saveDraftBtn.addEventListener('click', async () => {
+      saveDraftBtn.disabled = true;
+      try {
+        const resp = await fetch(`/api/pp-report/${month}/save-draft`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({rows: collectDraftRows()}),
+        });
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body.detail || 'save failed');
+        showSaved(`Draft saved (${body.saved} project${body.saved === 1 ? '' : 's'})`);
+        location.reload(); // refresh computed columns from the newly saved draft
+      } catch (e) {
+        showError(e.message);
+        saveDraftBtn.disabled = false;
+      }
+    });
+  }
+
+  const lockBtn = document.getElementById('pp-lock-btn');
+  if (lockBtn) {
+    lockBtn.addEventListener('click', async () => {
+      if (!confirm(`Lock ${month}? This saves your current edits first, then freezes the figures — next month will read "Previous Accumulated" from this snapshot. You can reopen it later if needed.`)) return;
+      lockBtn.disabled = true;
+      try {
+        // Auto-save whatever's currently on screen before locking, so an
+        // edit never gets silently discarded just because Save draft
+        // wasn't clicked first.
+        const resp = await fetch(`/api/pp-report/${month}/lock`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({rows: tbody ? collectDraftRows() : []}),
+        });
+        if (!resp.ok) throw new Error((await resp.json()).detail || 'lock failed');
+        location.reload();
+      } catch (e) {
+        showError(e.message);
+        lockBtn.disabled = false;
+      }
+    });
+  }
+
+  const unlockBtn = document.getElementById('pp-unlock-btn');
+  if (unlockBtn) {
+    unlockBtn.addEventListener('click', async () => {
+      if (!confirm(`Reopen ${month} for editing? Its frozen figures stay until you lock it again.`)) return;
+      try {
+        const resp = await fetch(`/api/pp-report/${month}/unlock`, {method: 'POST'});
+        if (!resp.ok) throw new Error((await resp.json()).detail || 'reopen failed');
+        location.reload();
+      } catch (e) { showError(e.message); }
+    });
+  }
+
+  // ---------- filters (search + country dropdown + Fully Earned chips + Earned-this-month toggle) ----------
+  const searchInput = document.getElementById('pp-search');
+  const countrySelect = document.getElementById('pp-filter-country');
+  const pmSelect = document.getElementById('pp-filter-pm');
+  let filterMode = 'all';       // 'all' | 'fully-earned' | 'not-fully-earned' — mutually exclusive chips
+  let earnedThisMonth = false;  // standalone toggle, layers on top of filterMode
+  let negativeAmountOnly = false;  // standalone toggle, layers on top of filterMode
+
+  if (countrySelect && tbody) {
+    const countries = Array.from(new Set(
+      Array.from(tbody.querySelectorAll('tr')).map(tr => tr.dataset.country).filter(Boolean)
+    )).sort();
+    countries.forEach(c => countrySelect.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
+  }
+
+  if (pmSelect && tbody) {
+    const managers = Array.from(new Set(
+      Array.from(tbody.querySelectorAll('tr')).map(tr => tr.dataset.manager).filter(Boolean)
+    )).sort();
+    managers.forEach(m => pmSelect.insertAdjacentHTML('beforeend', `<option value="${m}">${m}</option>`));
+  }
+
+  const countNote = document.getElementById('pp-count-note');
+
+  function applyFilters() {
+    const q = (searchInput?.value || '').trim().toLowerCase().replace(/^#/, '');
+    const country = countrySelect?.value || '';
+    const pm = pmSelect?.value || '';
+
+    const allRows = tbody.querySelectorAll('tr');
+    let visibleCount = 0;
+    allRows.forEach(tr => {
+      let visible = true;
+      if (q && !tr.dataset.name.includes(q)) visible = false;
+      if (country && tr.dataset.country !== country) visible = false;
+      if (pm && tr.dataset.manager !== pm) visible = false;
+      if (filterMode === 'fully-earned' && tr.dataset.fullyearned !== 'yes') visible = false;
+      if (filterMode === 'not-fully-earned' && tr.dataset.fullyearned !== 'no') visible = false;
+      // "Earned this month" means any earning at all, including negative
+      // (an overrun that should be corrected) — only exactly 0 is excluded.
+      if (earnedThisMonth && (parseFloat(tr.dataset.amounttobetaken) || 0) === 0) visible = false;
+      if (negativeAmountOnly && !((parseFloat(tr.dataset.amounttobetaken) || 0) < 0)) visible = false;
+      tr.style.display = visible ? '' : 'none';
+      if (visible) visibleCount++;
+    });
+    if (countNote) {
+      countNote.textContent = `Showing ${visibleCount} of ${allRows.length} project${allRows.length === 1 ? '' : 's'}`;
+    }
+    recomputeTotals();
+  }
+
+  [searchInput, countrySelect, pmSelect].forEach(el => {
+    if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', applyFilters);
+  });
+
+  document.querySelectorAll('.pp-toolbar .filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.pp-toolbar .filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      filterMode = chip.dataset.filter;
+      applyFilters();
+    });
+  });
+
+  const earnedMonthToggle = document.getElementById('pp-earned-month-toggle');
+  if (earnedMonthToggle) {
+    earnedMonthToggle.addEventListener('click', () => {
+      earnedThisMonth = !earnedThisMonth;
+      earnedMonthToggle.classList.toggle('active', earnedThisMonth);
+      earnedMonthToggle.setAttribute('aria-pressed', String(earnedThisMonth));
+      applyFilters();
+    });
+  }
+
+  const negativeAmountToggle = document.getElementById('pp-negative-amount-toggle');
+  if (negativeAmountToggle) {
+    negativeAmountToggle.addEventListener('click', () => {
+      negativeAmountOnly = !negativeAmountOnly;
+      negativeAmountToggle.classList.toggle('active', negativeAmountOnly);
+      negativeAmountToggle.setAttribute('aria-pressed', String(negativeAmountOnly));
+      applyFilters();
+    });
+  }
+
+  applyFilters(); // populate the "Showing X of Y" note on initial load
+
+  // ---------- sortable columns ----------
+  const DATA_KEY_ATTR = {
+    projectId: 'projectid', name: 'name', country: 'country', managerName: 'manager', estimated: 'estimated', spent: 'spent', risk: 'risk', totalRevenue: 'totalrevenue',
+    previousAccumulated: 'previousaccumulated', accumulated: 'accumulated', amountToBeTaken: 'amounttobetaken',
+    fullyEarned: 'fullyearned', yetToEarn: 'yettoearn', remainingPct: 'remainingpct',
+    salesSoldProfit: 'salessoldprofit', salesExpectedProfit: 'salesexpectedprofit',
+    projectTimeProfitability: 'projecttimeprofitability', costTillDate: 'costtilldate',
+    profitTillDate: 'profittilldate', amountProfitability: 'amountprofitability',
+    completion: 'completion', expectedProfitability: 'expectedprofitability',
+  };
+  let sortKey = null, sortDir = 1;
+  document.querySelectorAll('#pp-table thead th[data-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      const attr = DATA_KEY_ATTR[key];
+      if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = th.dataset.type === 'num' ? -1 : 1; }
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => {
+        let av = a.dataset[attr] ?? (key === 'name' ? a.dataset.name : '');
+        let bv = b.dataset[attr] ?? (key === 'name' ? b.dataset.name : '');
+        if (th.dataset.type === 'num') { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; return (av - bv) * sortDir; }
+        return String(av).localeCompare(String(bv)) * sortDir;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+      document.querySelectorAll('#pp-table thead th').forEach(h => {
+        h.querySelector('.arrow')?.remove();
+        if (h === th) h.insertAdjacentHTML('beforeend', `<span class="arrow">${sortDir === 1 ? '▲' : '▼'}</span>`);
+      });
+    });
+  });
+
+  // ---------- Performance tab: search/country/margin filter ----------
+  const perfSearch = document.getElementById('perf-search');
+  const perfCountry = document.getElementById('perf-country');
+  const perfMaxMargin = document.getElementById('perf-max-margin');
+  const perfTbody = document.getElementById('perf-tbody');
+  const perfCountHint = document.getElementById('perf-count-hint');
+  if (perfTbody) {
+    const perfRows = Array.from(perfTbody.querySelectorAll('tr[data-project]'));
+    const applyPerfFilter = () => {
+      const search = (perfSearch.value || '').trim().toLowerCase();
+      const country = perfCountry.value || '';
+      const maxMarginText = (perfMaxMargin.value || '').trim();
+      const maxMargin = maxMarginText === '' ? null : parseFloat(maxMarginText);
+      let visible = 0;
+      perfRows.forEach(row => {
+        const matchesSearch = !search || row.dataset.project.includes(search) || row.dataset.country.includes(search);
+        const matchesCountry = !country || row.dataset.country === country.toLowerCase();
+        const marginPct = parseFloat(row.dataset.marginPct);
+        const matchesMargin = maxMargin === null || (!isNaN(marginPct) && marginPct <= maxMargin);
+        const show = matchesSearch && matchesCountry && matchesMargin;
+        row.hidden = !show;
+        if (show) visible++;
+      });
+      if (perfCountHint) perfCountHint.textContent = `Showing ${visible} of ${perfRows.length} revenue-bearing projects`;
+    };
+    perfSearch.addEventListener('input', applyPerfFilter);
+    perfCountry.addEventListener('change', applyPerfFilter);
+    perfMaxMargin.addEventListener('input', applyPerfFilter);
+    applyPerfFilter();
+  }
+
+  const perfExportBtn = document.getElementById('pp-performance-export-btn');
+  const perfExportProgress = document.getElementById('pp-performance-export-progress');
+  if (perfExportBtn) {
+    perfExportBtn.addEventListener('click', async () => {
+      perfExportBtn.disabled = true;
+      if (perfExportProgress) perfExportProgress.hidden = false;
+      try {
+        const resp = await fetch(`/pp-report/${perfExportBtn.dataset.month}/performance-export`);
+        if (!resp.ok) throw new Error(`Export failed (HTTP ${resp.status}).`);
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = /filename="([^"]+)"/.exec(disposition);
+        const filename = match ? match[1] : `Projects Performance ${perfExportBtn.dataset.month}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        showError(e.message || 'Export failed.');
+      } finally {
+        perfExportBtn.disabled = false;
+        if (perfExportProgress) perfExportProgress.hidden = true;
+      }
+    });
+  }
+
+  // ---------- Profitability tab: search filter + export ----------
+  const profitSearch = document.getElementById('profit-search');
+  const profitTbody = document.getElementById('profit-tbody');
+  const profitCountHint = document.getElementById('profit-count-hint');
+  if (profitTbody) {
+    const profitRows = Array.from(profitTbody.querySelectorAll('tr[data-search]'));
+    const applyProfitFilter = () => {
+      const search = (profitSearch.value || '').trim().toLowerCase();
+      let visible = 0;
+      profitRows.forEach(row => {
+        const show = !search || row.dataset.search.includes(search);
+        row.hidden = !show;
+        if (show) visible++;
+      });
+      if (profitCountHint) profitCountHint.textContent = `Showing ${visible} of ${profitRows.length} projects`;
+    };
+    profitSearch.addEventListener('input', applyProfitFilter);
+    applyProfitFilter();
+  }
+
+  const profitExportBtn = document.getElementById('pp-profitability-export-btn');
+  const profitExportProgress = document.getElementById('pp-profitability-export-progress');
+  if (profitExportBtn) {
+    profitExportBtn.addEventListener('click', async () => {
+      profitExportBtn.disabled = true;
+      if (profitExportProgress) profitExportProgress.hidden = false;
+      try {
+        const resp = await fetch(`/pp-report/${profitExportBtn.dataset.month}/profitability-export`);
+        if (!resp.ok) throw new Error(`Export failed (HTTP ${resp.status}).`);
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = /filename="([^"]+)"/.exec(disposition);
+        const filename = match ? match[1] : `Project Profitability ${profitExportBtn.dataset.month}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        showError(e.message || 'Export failed.');
+      } finally {
+        profitExportBtn.disabled = false;
+        if (profitExportProgress) profitExportProgress.hidden = true;
+      }
+    });
+  }
+
+  const countryProjectExportBtn = document.getElementById('pp-country-project-export-btn');
+  const countryProjectExportProgress = document.getElementById('pp-country-project-export-progress');
+  if (countryProjectExportBtn) {
+    countryProjectExportBtn.addEventListener('click', async () => {
+      countryProjectExportBtn.disabled = true;
+      if (countryProjectExportProgress) countryProjectExportProgress.hidden = false;
+      try {
+        const resp = await fetch(`/pp-report/${countryProjectExportBtn.dataset.month}/country-project-export`);
+        if (!resp.ok) throw new Error(`Export failed (HTTP ${resp.status}).`);
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = /filename="([^"]+)"/.exec(disposition);
+        const filename = match ? match[1] : `PP Report Country x Project ${countryProjectExportBtn.dataset.month}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        showError(e.message || 'Export failed.');
+      } finally {
+        countryProjectExportBtn.disabled = false;
+        if (countryProjectExportProgress) countryProjectExportProgress.hidden = true;
+      }
+    });
+  }
+
+  // ---------- Report / Summary / Performance / Profitability tabs ----------
+  const tabButtons = document.querySelectorAll('.pp-tab-btn');
+  const tabPanels = {
+    report: document.getElementById('pp-tab-report'),
+    summary: document.getElementById('pp-tab-summary'),
+    performance: document.getElementById('pp-tab-performance'),
+    profitability: document.getElementById('pp-tab-profitability'),
+  };
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      Object.entries(tabPanels).forEach(([key, panel]) => {
+        if (panel) panel.hidden = key !== btn.dataset.tab;
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}App Settings &mdash; ERM{% endblock %}
+{% block content %}
+<div class="wrap wide">
+  <h1>Shared Redmine connection</h1>
+  <p class="hint">This connection is shared by every user of this app — everyone's "Refresh from Redmine" uses the same URL, API key, and saved query. There's no per-user Redmine key anymore; each user's own preferences (My Team, Project Manager id) live under <a href="/settings">Settings</a> instead.</p>
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+  <form method="post" action="/app-settings">
+    <label>Redmine URL</label>
+    <input type="text" name="redmine_url" value="{{ settings.redmine_url }}" placeholder="https://redmine.seidor.es" required>
+
+    <label>API key</label>
+    <input type="password" name="api_key" placeholder="{{ 'Leave blank to keep the saved key' if settings.api_key else 'A Redmine API key for the whole app to use' }}">
+    <p class="hint">Find one under Redmine's My account &rarr; API access key (for whichever account should be the shared service account).</p>
+
+    <label>&ldquo;All statuses&rdquo; saved query ID (optional)</label>
+    <input type="text" name="all_statuses_query_id" value="{{ settings.all_statuses_query_id }}" placeholder="e.g. 52">
+    <p class="hint">Without this, only open projects are fetched (Redmine's default). Create a saved, "all statuses" project query in Redmine under the account above and put its numeric id here to include closed projects too.</p>
+
+    <div class="row">
+      <button type="submit">Save settings</button>
+      <button type="submit" name="action" value="test" class="secondary">Test connection</button>
+    </div>
+  </form>
+</div>
+
+<div class="wrap wide">
+  <h1>Auto-refresh</h1>
+  <p class="hint">Automatically run "Refresh from Redmine" on a schedule, so users don't have to remember to click it themselves. Times below are in <strong>this server's</strong> local time zone, not your browser's — the schedule needs to run the same way no matter whose browser configured it.</p>
+
+  <p class="hint" style="margin-bottom:1rem;">
+    Last auto-fetch: <strong><span class="local-time" data-utc-iso="{{ fetch_status.last_auto_fetch_on or '' }}"></span></strong>
+    &nbsp;&middot;&nbsp;
+    Next scheduled fetch: <strong><span class="local-time" data-utc-iso="{{ next_fetch_iso or '' }}" data-empty="Not scheduled"></span></strong>
+    &nbsp;&middot;&nbsp;
+    Last manual fetch: <strong><span class="local-time" data-utc-iso="{{ fetch_status.last_manual_fetch_on or '' }}"></span></strong>
+  </p>
+
+  {% if fetch_status.state == 'running' %}
+  <div class="msg error" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+    <span>A refresh has been running since {{ fetch_status.updated_on }}{% if fetch_status.started_by %} (started by {{ fetch_status.started_by }}){% endif %}. If this has been stuck for a while (e.g. the app crashed or Redmine stopped responding mid-fetch), you can clear it below so Refresh can be tried again.</span>
+    <form method="post" action="/app-settings/reset-stuck-refresh" style="margin:0;" onsubmit="return confirm('Clear the stuck refresh so a new one can be started? Only do this if you\'re sure nothing is genuinely still fetching.');">
+      <button type="submit" class="secondary" style="margin:0; white-space:nowrap;">Clear stuck refresh</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/app-settings/auto-refresh" id="auto-refresh-form">
+    <label>Frequency</label>
+    <select name="auto_refresh_mode" id="ar-mode">
+      <option value="off" {{ 'selected' if auto_refresh.mode == 'off' }}>Off</option>
+      <option value="interval" {{ 'selected' if auto_refresh.mode == 'interval' }}>Every ___ minutes</option>
+      <option value="daily" {{ 'selected' if auto_refresh.mode == 'daily' }}>Every day at ___</option>
+      <option value="weekly" {{ 'selected' if auto_refresh.mode == 'weekly' }}>Every week on ___ at ___</option>
+      <option value="monthly" {{ 'selected' if auto_refresh.mode == 'monthly' }}>Every month on ___ at ___</option>
+    </select>
+
+    <div id="ar-field-interval" class="ar-field">
+      <label>Every</label>
+      <input type="number" name="auto_refresh_interval_minutes" min="1" step="1"
+             value="{{ auto_refresh.interval_minutes or 10 }}" placeholder="e.g. 10"> minutes
+    </div>
+
+    <div id="ar-field-weekday" class="ar-field">
+      <label>Day of week</label>
+      <select name="auto_refresh_weekday">
+        {% set weekday_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
+        {% for i in range(7) %}
+        <option value="{{ i }}" {{ 'selected' if auto_refresh.weekday == i }}>{{ weekday_names[i] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="ar-field-day-of-month" class="ar-field">
+      <label>Day of month</label>
+      <input type="number" name="auto_refresh_day_of_month" min="1" max="31" step="1"
+             value="{{ auto_refresh.day_of_month or 1 }}" placeholder="e.g. 2">
+      <p class="hint">If a month is shorter than this day (e.g. the 31st in a 30-day month), it runs on that month's last day instead.</p>
+    </div>
+
+    <div id="ar-field-time" class="ar-field">
+      <label>Time of day</label>
+      <input type="time" name="auto_refresh_time" value="{{ auto_refresh.time or '07:00' }}">
+    </div>
+
+    <button type="submit">Save schedule</button>
+  </form>
+</div>
+
+<script>
+(function() {
+  const modeSelect = document.getElementById('ar-mode');
+  const fields = {
+    interval: document.getElementById('ar-field-interval'),
+    weekday: document.getElementById('ar-field-weekday'),
+    dayOfMonth: document.getElementById('ar-field-day-of-month'),
+    time: document.getElementById('ar-field-time'),
+  };
+  function applyVisibility() {
+    const mode = modeSelect.value;
+    fields.interval.hidden = mode !== 'interval';
+    fields.weekday.hidden = mode !== 'weekly';
+    fields.dayOfMonth.hidden = mode !== 'monthly';
+    fields.time.hidden = !['daily', 'weekly', 'monthly'].includes(mode);
+  }
+  modeSelect.addEventListener('change', applyVisibility);
+  applyVisibility();
+})();
+</script>
+{% endblock %}

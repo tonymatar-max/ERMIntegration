@@ -1,0 +1,17 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+itsdangerous>=2.2
+bcrypt>=4.0
+cryptography>=42
+requests>=2.31
+jinja2>=3.1
+python-multipart>=0.0.9
+openpyxl>=3.1
+# Makes requests/urllib3 trust the OS certificate store (Windows: the
+# system trust store) instead of only the bundled certifi CAs — needed
+# wherever local antivirus/endpoint-security software does HTTPS
+# inspection (e.g. Norton's "Web/Mail Shield" re-signs connections with
+# its own root, which Windows trusts but certifi doesn't), so calls to
+# Redmine don't fail with SSLCertVerificationError on those machines. A
+# no-op import-time patch, harmless on machines without such software.
+pip-system-certs>=4.0; sys_platform == 'win32'

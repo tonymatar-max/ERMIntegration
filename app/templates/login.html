@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Log in &mdash; ERM{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Log in</h1>
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <label>Username</label>
+    <input type="text" name="username" required autofocus>
+    <label>Password</label>
+    <input type="password" name="password" required>
+    <button type="submit">Log in</button>
+  </form>
+</div>
+{% endblock %}

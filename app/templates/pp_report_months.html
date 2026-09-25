@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}PP Report Data &mdash; ERM{% endblock %}
+{% block content %}
+<div class="wrap wide">
+  <h1>Excluded projects</h1>
+  <p class="hint">Redmine project ids to leave out of the PP Report entirely — they won't appear in any month's rows, totals, country summary, or Excel export. Doesn't affect an already-locked month's frozen snapshot, only months computed live going forward.</p>
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+  <form method="post" action="/admin/pp-report-months/excluded-projects">
+    <label>Project ids (comma-separated)</label>
+    <input type="text" name="project_ids" value="{{ excluded_project_ids }}" placeholder="e.g. 8650, 8671, 9012">
+    <button type="submit">Save</button>
+  </form>
+
+  <h1 style="margin-top:2rem;">Excluded Project Managers</h1>
+  <p class="hint">Redmine Project Manager ids whose projects are left out of the PP Report entirely — every project they manage, same effect as listing each of that PM's project ids above. Doesn't affect an already-locked month's frozen snapshot, only months computed live going forward.</p>
+  <form method="post" action="/admin/pp-report-months/excluded-managers">
+    <label>Project Manager ids (comma-separated)</label>
+    <input type="text" name="manager_ids" value="{{ excluded_manager_ids }}" placeholder="e.g. 3252, 1048">
+    <button type="submit">Save</button>
+  </form>
+</div>
+
+<div class="wrap wide">
+  <h1>KSA data (from Excel)</h1>
+  <p class="hint">KSA projects aren't tracked in Redmine. Upload the monthly PP Report workbook and the app reads the <strong>Saudi Arabia</strong> rows from that month's tab (e.g. <em>Aug</em> for August): <em>Initial Revenue</em> &rarr; Total Revenue, <em>*Earnings</em> &rarr; Accumulated, the <em>*Earnings</em> of the <strong>previous month's tab</strong> (e.g. <em>July</em>) &rarr; Previous Accumulated, and the difference &rarr; Amount to Take (the tab's own <em>Diff</em> column is ignored — its lookup breaks for some projects). Keep the previous month's tab in the workbook. They then appear in the PP Report (country <strong>KSA</strong>, read-only) and in the Country summary. A new upload replaces that month's previous KSA data. Works on a <strong>locked</strong> month too &mdash; only its KSA lines are updated, every other country's frozen figures stay untouched.</p>
+  <form method="post" action="/admin/pp-report-months/ksa-upload" enctype="multipart/form-data">
+    <label>Month</label>
+    <input type="month" name="month" value="{{ default_ksa_month }}" required>
+    <label>Workbook (.xlsx)</label>
+    <input type="file" name="file" accept=".xlsx,.xlsm" required>
+    <button type="submit">Upload KSA data</button>
+  </form>
+  {% if ksa_months %}
+  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
+        <th style="padding:0.5rem 0.4rem;">Month</th>
+        <th style="padding:0.5rem 0.4rem;">KSA projects</th>
+        <th style="padding:0.5rem 0.4rem;">Amount to Take</th>
+        <th style="padding:0.5rem 0.4rem;">Uploaded (UTC)</th>
+        <th style="padding:0.5rem 0.4rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in ksa_months %}
+      <tr style="border-bottom:1px solid #eef1f4;">
+        <td style="padding:0.5rem 0.4rem;">{{ k.label }}{% if k.locked %} <span class="hint">(locked)</span>{% endif %}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ k.count }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ "{:,.0f}".format(k.amount_to_take) }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ k.updated_on }}</td>
+        <td style="padding:0.5rem 0.4rem;">
+          <form method="post" action="/admin/pp-report-months/ksa-delete" style="margin:0;" onsubmit="return confirm('Remove the KSA data loaded for {{ k.label }}?');">
+            <input type="hidden" name="month" value="{{ k.month }}">
+            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem; color:#a4262c;">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h1 style="margin-top:2rem;">KSA timesheet</h1>
+  <p class="hint">Upload the Intra timesheet export for the month (a KSA-only file, or the full export &mdash; only the <strong>KSA</strong> rows are read). Hours on the KSA projects listed in the workbook above feed the <strong>Utilization Report</strong>, <strong>Resource Planning</strong> and the <strong>Cost till Date / profit</strong> of the KSA rows in the PP Report (hours &times; each consultant's rate on the Employees screen). Leave, support, sales and other countries' project codes aren't project time and are left out. Upload the workbook for the month first. A new upload replaces that month's hours (also fine for a locked month &mdash; only its KSA lines are refreshed).</p>
+  <form method="post" action="/admin/pp-report-months/ksa-timesheet-upload" enctype="multipart/form-data">
+    <label>Month</label>
+    <input type="month" name="month" value="{{ default_ksa_month }}" required>
+    <label>Timesheet (.xlsx)</label>
+    <input type="file" name="file" accept=".xlsx,.xlsm" required>
+    <button type="submit">Upload KSA timesheet</button>
+  </form>
+  {% if ksa_timesheet_months %}
+  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
+        <th style="padding:0.5rem 0.4rem;">Month</th>
+        <th style="padding:0.5rem 0.4rem;">Entries</th>
+        <th style="padding:0.5rem 0.4rem;">People</th>
+        <th style="padding:0.5rem 0.4rem;">Hours</th>
+        <th style="padding:0.5rem 0.4rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in ksa_timesheet_months %}
+      <tr style="border-bottom:1px solid #eef1f4;">
+        <td style="padding:0.5rem 0.4rem;">{{ t.label }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ t.entries }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ t.people }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ "{:,.1f}".format(t.hours) }}</td>
+        <td style="padding:0.5rem 0.4rem;">
+          <form method="post" action="/admin/pp-report-months/ksa-timesheet-delete" style="margin:0;" onsubmit="return confirm('Remove the KSA timesheet loaded for {{ t.label }}?');">
+            <input type="hidden" name="month" value="{{ t.month }}">
+            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem; color:#a4262c;">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="wrap wide">
+  <h1>PP Report month data</h1>
+  <p class="hint">Every month that's ever been locked or had a saved draft. Deleting a month wipes its locked snapshot (if any) and every saved draft outright — the next visit to that month starts completely fresh, as if it had never been touched. This cannot be undone.</p>
+  <p class="hint">A month can only be deleted while no <strong>later</strong> month is still locked (the same rule as reopening) &mdash; otherwise that later month's "Prev. Accumulated" would be left pointing at data that no longer exists.</p>
+
+  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
+        <th style="padding:0.5rem 0.4rem;">Month</th>
+        <th style="padding:0.5rem 0.4rem;">Status</th>
+        <th style="padding:0.5rem 0.4rem;">Daily rate</th>
+        <th style="padding:0.5rem 0.4rem;">Draft rows</th>
+        <th style="padding:0.5rem 0.4rem;">Reopened by</th>
+        <th style="padding:0.5rem 0.4rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in months %}
+      <tr style="border-bottom:1px solid #eef1f4;">
+        <td style="padding:0.5rem 0.4rem;">{{ m.label }}</td>
+        <td style="padding:0.5rem 0.4rem;">
+          {% if m.locked %}<span style="color:#a4262c; font-weight:600;">Locked</span>{% else %}<span style="color:#1e6b34;">Open</span>{% endif %}
+        </td>
+        <td style="padding:0.5rem 0.4rem;">{{ m.daily_rate }}</td>
+        <td style="padding:0.5rem 0.4rem;">{{ m.draft_row_count }}</td>
+        <td style="padding:0.5rem 0.4rem;">
+          {% if m.reopened_by %}{{ m.reopened_by }} <span class="local-time" data-utc-iso="{{ m.reopened_on }}"></span>{% endif %}
+        </td>
+        <td style="padding:0.5rem 0.4rem;">
+          <form method="post" action="/admin/pp-report-months/{{ m.month }}/delete" style="margin:0;" onsubmit="return confirm('Permanently delete ALL data for {{ m.label }} — its locked snapshot (if any) and every saved draft? This cannot be undone.');">
+            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem; color:#a4262c;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding:0.5rem 0.4rem;">No PP Report data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

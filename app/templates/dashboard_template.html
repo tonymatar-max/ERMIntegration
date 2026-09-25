@@ -1,0 +1,2543 @@
+<title>Project Ledger</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Seidor brand palette — navy/blue, matched from seidor.com (header text
+     #07153A, primary buttons #263C7A, accent highlight #66B6FF), Poppins
+     for display type. Everything below this token block is unchanged — it
+     already reads entirely off these CSS variables. */
+  :root {
+    --paper: #f5f7fb;
+    --paper-raised: #ffffff;
+    --ink: #07153a;
+    --ink-soft: #445071;
+    --ink-faint: #8892ab;
+    --border: #dfe4ee;
+    --border-strong: #c3cbdd;
+    --accent: #263c7a;
+    --accent-soft: #263c7a14;
+    --accent-ink: #ffffff;
+    --good: #1e7a4f;
+    --good-soft: #1e7a4f16;
+    --warn: #b8792e;
+    --warn-soft: #b8792e18;
+    --stale: #c0392b;
+    --stale-soft: #c0392b16;
+    --row-hover: #eef1f8;
+    --shadow: 0 1px 2px rgba(7,21,58,0.05), 0 8px 24px -12px rgba(7,21,58,0.14);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0d1526;
+      --paper-raised: #131c33;
+      --ink: #e7eaf2;
+      --ink-soft: #aab2c8;
+      --ink-faint: #75809b;
+      --border: #263252;
+      --border-strong: #324067;
+      --accent: #6f8fe8;
+      --accent-soft: #6f8fe81c;
+      --accent-ink: #0a0f1e;
+      --good: #5fbf8a;
+      --good-soft: #5fbf8a1c;
+      --warn: #e0a355;
+      --warn-soft: #e0a3551c;
+      --stale: #e2735a;
+      --stale-soft: #e2735a1c;
+      --row-hover: #182241;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #0d1526;
+    --paper-raised: #131c33;
+    --ink: #e7eaf2;
+    --ink-soft: #aab2c8;
+    --ink-faint: #75809b;
+    --border: #263252;
+    --border-strong: #324067;
+    --accent: #6f8fe8;
+    --accent-soft: #6f8fe81c;
+    --accent-ink: #0a0f1e;
+    --good: #5fbf8a;
+    --good-soft: #5fbf8a1c;
+    --warn: #e0a355;
+    --warn-soft: #e0a3551c;
+    --stale: #e2735a;
+    --stale-soft: #e2735a1c;
+    --row-hover: #182241;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Poppins", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(20px, 4vw, 48px);
+  }
+
+  .wrap { max-width: 1520px; margin: 0 auto; }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  h1 {
+    font-family: "Poppins", Arial, sans-serif;
+    font-weight: 500;
+    font-size: clamp(20px, 2.2vw, 26px);
+    letter-spacing: -0.01em;
+    margin: 0 0 4px;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .subtitle {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  .subtitle .src {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+
+  .asof {
+    text-align: right;
+    font-size: 12px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .asof strong {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--ink-soft);
+    font-size: 13px;
+    letter-spacing: 0;
+    margin-top: 2px;
+    text-transform: none;
+  }
+
+  /* ---------- summary strip ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 22px;
+    box-shadow: var(--shadow);
+  }
+  .stat {
+    background: var(--paper-raised);
+    padding: 16px 18px;
+    /* Lets .n's cqw sizing below track this card's own box width — grid
+       auto-fit columns can be much narrower than the viewport, so vw-based
+       sizing wouldn't track the actual available space. */
+    container-type: inline-size;
+    min-width: 0;
+  }
+  .stat .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    /* Scales with the card's width so longer values (e.g. "$2,914,873")
+       shrink to fit instead of being clipped when the card narrows; a JS
+       fallback (fitStatNumbers()) shrinks further for any value this
+       formula still doesn't cover. */
+    font-size: clamp(13px, 15cqw, 26px);
+    font-weight: 500;
+    line-height: 1;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .stat.accentnum .n { color: var(--accent); }
+  .stat.warnnum .n { color: var(--warn); }
+  .stat.stalenum .n { color: var(--stale); }
+  .stat .l {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-faint);
+    margin-top: 6px;
+  }
+
+  /* ---------- dropzone ---------- */
+  .dropzone {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 18px;
+    background: var(--paper-raised);
+    color: var(--ink-faint);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .dropzone svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--ink-faint); }
+  .dropzone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .dropzone.drag-over svg { color: var(--accent); }
+  .dropzone[hidden] { display: none; }
+  .dz-text { font-size: 13px; line-height: 1.5; }
+  .dz-text strong { color: var(--ink-soft); font-weight: 600; }
+  .dz-text code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  #dz-browse {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  #dz-browse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .load-note {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin: -6px 2px 14px;
+  }
+  .load-note.ok { color: var(--good); }
+  .load-note.err { color: var(--stale); }
+
+  /* ---------- controls ---------- */
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .search {
+    position: relative;
+    flex: 1 1 240px;
+    min-width: 200px;
+  }
+  .search input {
+    width: 100%;
+    padding: 9px 12px 9px 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-raised);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 13.5px;
+  }
+  .search input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .search svg {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--ink-faint);
+    pointer-events: none;
+  }
+
+  .filter-chip {
+    font-family: "Poppins", sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-raised);
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+  .filter-chip:hover { background: var(--row-hover); }
+  .filter-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+  .filter-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* "My projects" is a standalone toggle layered on top of whichever
+     filter chip is active (rather than one more mutually-exclusive chip),
+     so it gets its own look — an outlined pill instead of the filled
+     chip style — to signal it behaves differently. */
+  .chip-divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border-strong);
+    margin: 2px 2px;
+  }
+  .toggle-chip {
+    font-family: "Poppins", sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .toggle-chip:hover { background: var(--accent-soft); }
+  .toggle-chip.active {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .toggle-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toggle-chip .tc-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    flex: none;
+  }
+  .toggle-chip.active .tc-dot { background: currentColor; }
+
+  .pm-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "Poppins", sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .pm-filter select {
+    font-family: "Poppins", sans-serif;
+    font-size: 12.5px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-raised);
+    color: var(--ink);
+    cursor: pointer;
+    max-width: 220px;
+  }
+  .pm-filter select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  #back-to-top {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 50;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-raised);
+    color: var(--ink-soft);
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, transform 120ms ease, opacity 150ms ease;
+  }
+  #back-to-top svg { width: 20px; height: 20px; }
+  #back-to-top:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); transform: translateY(-2px); }
+  #back-to-top:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #back-to-top[hidden] { display: none; }
+
+  .count-note {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin: 2px 2px 10px;
+  }
+
+  /* ---------- table ---------- */
+  .table-scroll {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 70vh;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    background: var(--paper-raised);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.2px;
+    min-width: 900px;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--paper-raised);
+    text-align: left;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border-strong);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  thead th:hover { color: var(--ink-soft); }
+  thead th.sorted { color: var(--accent); }
+  thead th .arrow { font-size: 9px; margin-left: 3px; opacity: 0.7; }
+  thead th:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 100ms ease;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--row-hover); }
+  tbody tr.row-link { cursor: pointer; }
+  tbody tr.row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  td { padding: 10px 14px; vertical-align: top; }
+
+  td.id {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--ink-faint);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  td.name { max-width: 420px; }
+  td.name .n { color: var(--ink); font-weight: 500; line-height: 1.35; }
+  .rcode-sub {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 2px;
+  }
+
+  td.num {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--ink-soft);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+  .pill.active { background: var(--good-soft); color: var(--good); }
+  .pill.closed { background: var(--border-strong); color: var(--ink-faint); }
+  .pill::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  td.review { max-width: 300px; }
+  .rev-summary { color: var(--ink); line-height: 1.4; }
+  .rev-date {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    margin-top: 3px;
+  }
+  .rev-date.fresh { color: var(--good); }
+  .rev-date.stale { color: var(--stale); }
+
+  td.recent-log {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+  td.recent-log .fresh { color: var(--good); }
+  td.recent-log .stale { color: var(--stale); }
+  .rev-empty {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--stale);
+    background: var(--stale-soft);
+    padding: 3px 9px;
+    border-radius: 99px;
+  }
+  .rev-empty::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  .empty-dash { color: var(--ink-faint); }
+
+  td.code { white-space: nowrap; }
+  .rcode {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    background: var(--row-hover);
+    padding: 3px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.01em;
+  }
+
+  .risk-pill {
+    display: inline-flex;
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+  .risk-pill.good { background: var(--good-soft); color: var(--good); }
+  .risk-pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .risk-pill.neutral { background: var(--row-hover); color: var(--ink-soft); }
+
+  .spent-pill.over {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    font-weight: 600;
+    color: var(--stale);
+    background: var(--stale-soft);
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+  .spent-pct { font-size: 11px; }
+  .spent-pct.muted { color: var(--ink-faint); }
+
+  .remaining-pill {
+    display: inline-flex;
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+  .remaining-pill.pos { background: var(--good-soft); color: var(--good); }
+  .remaining-pill.neg { background: var(--stale-soft); color: var(--stale); }
+
+  .no-results {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--ink-faint);
+    font-size: 13.5px;
+  }
+
+  footer {
+    margin-top: 18px;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    text-align: center;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  /* ---------- tabs ---------- */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    font-family: "Poppins", sans-serif;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border: none;
+    background: none;
+    color: var(--ink-faint);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+  .tab-btn:hover { color: var(--ink-soft); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ---------- time analysis: filter bar ---------- */
+  .ta-filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 10px;
+  }
+  .ta-filters-row2 {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 14px;
+  }
+  .ta-filters select,
+  .ta-filters input[type="date"],
+  .ta-filters-row2 select,
+  .ta-filters-row2 input[type="date"] {
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-raised);
+    color: var(--ink);
+  }
+  .ta-filters select:focus,
+  .ta-filters input[type="date"]:focus,
+  .ta-filters-row2 select:focus,
+  .ta-filters-row2 input[type="date"]:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .ta-filters label,
+  .ta-filters-row2 label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ta-clear {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    padding: 0;
+    align-self: flex-end;
+    margin-bottom: 9px;
+  }
+
+  /* ---------- time analysis: multi-select popover ---------- */
+  .ms-wrap { position: relative; }
+  .ms-btn {
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 30px 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-raised);
+    color: var(--ink);
+    cursor: pointer;
+    text-align: left;
+    min-width: 160px;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    position: relative;
+  }
+  .ms-btn::after {
+    content: "▾";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-faint);
+    font-size: 10px;
+  }
+  .ms-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .ms-btn.has-selection { border-color: var(--accent); color: var(--accent); }
+  .ms-popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    width: 280px;
+    max-height: 340px;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 6px;
+  }
+  .ms-popover[hidden] { display: none; }
+  .ms-search {
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 9px;
+    margin: 2px 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--paper);
+    color: var(--ink);
+    flex-shrink: 0;
+  }
+  .ms-search:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .ms-popover-actions {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 4px 6px 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+    flex-shrink: 0;
+  }
+  .ms-popover-actions button {
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .ms-count {
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-left: auto;
+  }
+  .ms-option-list {
+    overflow-y: auto;
+    max-height: 240px;
+  }
+  .ms-group-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    padding: 6px 8px 3px;
+  }
+  .ms-group-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4px 2px;
+  }
+  .ms-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .ms-option:hover { background: var(--row-hover); }
+  .ms-no-match {
+    padding: 14px 8px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+  }
+  .ms-option input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .ms-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- time analysis: charts ---------- */
+  .ta-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .chart-card {
+    background: var(--paper-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px 12px;
+    box-shadow: var(--shadow);
+  }
+  .chart-card h3 {
+    font-family: "Poppins", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin: 0 0 10px;
+  }
+  .chart-card svg { display: block; width: 100%; height: auto; }
+  .chart-bar { fill: var(--accent); }
+  .chart-bar:hover { fill: var(--stale); }
+  .chart-axis-label {
+    font-family: "Poppins", sans-serif;
+    font-size: 10px;
+    fill: var(--ink-faint);
+  }
+  .chart-value-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    font-weight: 500;
+    fill: var(--ink-soft);
+  }
+  .chart-empty {
+    text-align: center;
+    padding: 24px 10px;
+    color: var(--ink-faint);
+    font-size: 13px;
+  }
+
+  /* ---------- time analysis: grouped table ---------- */
+  .proj-group-row td {
+    background: var(--accent-soft);
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .proj-group-row:hover td { background: var(--accent-soft); }
+  .proj-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .proj-group-name {
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 13.5px;
+  }
+  .proj-group-name .pgid {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 400;
+    color: var(--ink-faint);
+    font-size: 11.5px;
+    margin-right: 6px;
+  }
+  .proj-group-metrics {
+    display: flex;
+    gap: 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .proj-group-metrics .m-label {
+    color: var(--ink-faint);
+    font-family: "Poppins", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    margin-right: 4px;
+  }
+  .proj-group-metrics .m-over { color: var(--stale); font-weight: 600; }
+
+  td.entry-name { padding-left: 26px; }
+  td.mono { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+  td.comments-cell { max-width: 280px; color: var(--ink-soft); font-size: 12.5px; }
+
+  .view-btn {
+    display: block;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+    background: var(--paper-raised);
+    border-radius: 5px;
+    padding: 2px 8px;
+    line-height: 1.6;
+    cursor: pointer;
+    color: var(--ink-soft);
+    font-size: 10.5px;
+    font-family: "Poppins", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .view-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  .review-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,18,14,0.45);
+    align-items: center; justify-content: center; z-index: 1000;
+  }
+  .review-modal {
+    background: var(--paper-raised); border-radius: 10px; padding: 24px;
+    width: 100%; max-width: 480px; max-height: 85vh; overflow: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  }
+  .review-modal h3 { margin: 0 0 14px; font-size: 16px; }
+  .review-modal label { display: block; font-size: 12.5px; font-weight: 600; margin: 12px 0 4px; color: var(--ink-soft); }
+  .review-modal input, .review-modal textarea {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-strong);
+    border-radius: 6px; font-size: 13.5px; font-family: inherit; resize: vertical;
+  }
+  .review-modal-hint { font-size: 11.5px; color: var(--ink-faint); margin: 8px 0 0; }
+  .review-modal-error { color: var(--stale); font-size: 12.5px; margin-bottom: 6px; min-height: 1em; }
+  .review-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .review-modal-btn { padding: 7px 16px; border-radius: 6px; font-size: 13.5px; cursor: pointer; border: 1px solid var(--border-strong); }
+  .review-modal-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .review-modal-btn.secondary { background: var(--paper-raised); color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Project Ledger</h1>
+      <p class="subtitle">Active engagements pulled from <span class="src">redmine.seidor.es</span></p>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="projects" type="button">Projects</button>
+    <button class="tab-btn" data-tab="time" type="button">Time Analysis</button>
+  </div>
+
+  <div id="tab-projects" class="tab-panel active">
+
+  <div class="stats">
+    <div class="stat">
+      <div class="n" id="stat-total">–</div>
+      <div class="l">Projects</div>
+    </div>
+    <div class="stat accentnum">
+      <div class="n" id="stat-order-total">–</div>
+      <div class="l">Total order amount</div>
+    </div>
+    <div class="stat accentnum">
+      <div class="n" id="stat-order-open">–</div>
+      <div class="l">Open amount</div>
+    </div>
+    <div class="stat warnnum">
+      <div class="n" id="stat-noreview">–</div>
+      <div class="l">No review on file</div>
+    </div>
+    <div class="stat stalenum">
+      <div class="n" id="stat-overspent">–</div>
+      <div class="l">Over budget</div>
+    </div>
+    <div class="stat stalenum">
+      <div class="n" id="stat-negremaining">–</div>
+      <div class="l">Negative remaining</div>
+    </div>
+  </div>
+
+  <div id="dropzone" class="dropzone" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4 7 9M12 4l5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+    <div class="dz-text">
+      <strong>Drop <code>redmine_project_list.csv</code> here</strong> to refresh this report — or
+      <button id="dz-browse" type="button">choose a file</button>
+    </div>
+    <input id="file-input" type="file" accept=".csv,text/csv" hidden>
+  </div>
+
+  <div class="controls">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" type="text" placeholder="Search by name, ID, rapport code, review summary or comments — multiple words = AND…" autocomplete="off">
+    </div>
+    <button class="filter-chip active" data-filter="all">All projects</button>
+    <button class="filter-chip" data-filter="open">Open</button>
+    <button class="filter-chip" data-filter="unreviewed">Needs review</button>
+    <button class="filter-chip" data-filter="reviewed">Reviewed</button>
+    <button class="filter-chip" data-filter="overspent">Over budget</button>
+    <button class="filter-chip" data-filter="negative-remaining">Negative remaining</button>
+    <span class="chip-divider"></span>
+    <label class="pm-filter" title="Layer on top of the filter chip above — narrows whatever's currently selected (including &quot;All projects&quot;) down to just that manager's projects.">
+      Project Manager
+      <select id="manager-select"><option value="">All managers</option></select>
+    </label>
+    <label class="pm-filter" title="Layer on top of the filter chip above — narrows whatever's currently selected down to just that country's projects.">
+      Country
+      <select id="country-select"><option value="">All countries</option></select>
+    </label>
+  </div>
+
+  <p class="count-note" id="count-note"></p>
+  <p class="load-note" id="load-note" hidden></p>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="id" data-type="num">ID</th>
+          <th data-key="name" data-type="str">Project</th>
+          <th data-key="country" data-type="str">Country</th>
+          <th data-key="managerName" data-type="str">PM</th>
+          <th data-key="orderAmount" data-type="num">Order amount</th>
+          <th data-key="spent" data-type="num">Spent / Est. hrs</th>
+          <th data-key="risk" data-type="num">Risk</th>
+          <th data-key="remaining" data-type="num">Remaining</th>
+          <th data-key="status" data-type="str">Status</th>
+          <th data-key="revDate" data-type="str">Last review</th>
+          <th data-key="recentLog" data-type="str">Recent log</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <footer id="footer-note">Spent hours have no values recorded yet in Redmine — that column will populate once time is logged against issues.</footer>
+
+  </div>
+
+  <div id="tab-time" class="tab-panel">
+
+  <div id="ta-dropzone" class="dropzone" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4 7 9M12 4l5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+    <div class="dz-text">
+      <strong>Drop <code>timespent.csv</code> here</strong> to load time entries — or
+      <button id="ta-dz-browse" type="button">choose a file</button>
+    </div>
+    <input id="ta-file-input" type="file" accept=".csv,text/csv" hidden>
+  </div>
+  <p class="load-note" id="ta-load-note" hidden></p>
+
+  <div class="ta-filters">
+    <label>User
+      <div class="ms-wrap" id="ms-wrap-user">
+        <button class="ms-btn" id="ms-btn-user" type="button" aria-haspopup="listbox" aria-expanded="false">All users</button>
+        <div class="ms-popover" id="ms-popover-user" role="listbox" hidden>
+          <input type="text" class="ms-search" id="ms-search-user" placeholder="Search users…" autocomplete="off">
+          <div class="ms-popover-actions">
+            <button type="button" data-ms="user" data-action="all">Select all</button>
+            <button type="button" data-ms="user" data-action="none">Clear</button>
+            <span class="ms-count" id="ms-count-user"></span>
+          </div>
+          <div class="ms-option-list" id="ms-options-user"></div>
+        </div>
+      </div>
+    </label>
+    <button class="ta-clear" id="ta-my-team" type="button" hidden>My Team</button>
+    <label>Project Manager
+      <select id="ta-manager-select"><option value="">All managers</option></select>
+    </label>
+    <label>Date range
+      <select id="ta-filter-preset">
+        <option value="">Custom</option>
+        <option value="this-week">This week</option>
+        <option value="last-week">Last week</option>
+        <option value="this-month">This month</option>
+        <option value="last-month">Last month</option>
+      </select>
+    </label>
+    <label>From
+      <input id="ta-filter-from" type="date">
+    </label>
+    <label>To
+      <input id="ta-filter-to" type="date">
+    </label>
+    <button class="ta-clear" id="ta-clear-filters" type="button">Clear filters</button>
+  </div>
+
+  <div class="ta-filters-row2">
+    <label>Project
+      <div class="ms-wrap" id="ms-wrap-project">
+        <button class="ms-btn" id="ms-btn-project" type="button" aria-haspopup="listbox" aria-expanded="false">All projects</button>
+        <div class="ms-popover" id="ms-popover-project" role="listbox" hidden>
+          <input type="text" class="ms-search" id="ms-search-project" placeholder="Search projects…" autocomplete="off">
+          <div class="ms-popover-actions">
+            <button type="button" data-ms="project" data-action="all">Select all</button>
+            <button type="button" data-ms="project" data-action="none">Clear</button>
+            <span class="ms-count" id="ms-count-project"></span>
+          </div>
+          <div class="ms-option-list" id="ms-options-project"></div>
+        </div>
+      </div>
+    </label>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="n" id="ta-stat-entries">–</div>
+      <div class="l">Time entries</div>
+    </div>
+    <div class="stat accentnum">
+      <div class="n" id="ta-stat-hours">–</div>
+      <div class="l">Hours (filtered)</div>
+    </div>
+    <div class="stat">
+      <div class="n" id="ta-stat-users">–</div>
+      <div class="l">Users</div>
+    </div>
+    <div class="stat">
+      <div class="n" id="ta-stat-projects">–</div>
+      <div class="l">Projects</div>
+    </div>
+  </div>
+
+  <div class="ta-charts">
+    <div class="chart-card">
+      <h3>Hours logged by user (filtered)</h3>
+      <div id="chart-by-user"></div>
+    </div>
+    <div class="chart-card">
+      <h3>Hours logged by project (filtered)</h3>
+      <div id="chart-by-project"></div>
+    </div>
+  </div>
+
+  <p class="count-note" id="ta-count-note"></p>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="spent_on" data-type="str">Date</th>
+          <th data-key="user_name" data-type="str">User</th>
+          <th data-key="issue_id" data-type="num">Issue</th>
+          <th data-key="activity_name" data-type="str">Activity</th>
+          <th data-key="hours" data-type="num">Hours</th>
+          <th>Comments</th>
+        </tr>
+      </thead>
+      <tbody id="ta-tbody"></tbody>
+    </table>
+  </div>
+
+  <footer id="ta-footer-note">Rows are grouped by project; each project's header line shows its overall Est./Spent hours from the Projects tab data (when loaded) for quick context.</footer>
+
+  </div>
+</div>
+
+<button id="back-to-top" type="button" aria-label="Return to top" title="Return to top" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+</button>
+
+<div id="review-modal-backdrop" class="review-modal-backdrop" style="display:none;">
+  <div id="review-modal" class="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+    <h3 id="review-modal-title">Edit project</h3>
+    <div id="review-modal-error" class="review-modal-error"></div>
+    <p id="review-modal-loading" class="review-modal-hint">Loading current values from Redmine&hellip;</p>
+    <div id="review-modal-fields" hidden>
+      <label for="review-modal-risk">Risk</label>
+      <input id="review-modal-risk" type="text">
+      <label for="review-modal-sap-order">SAP Order</label>
+      <input id="review-modal-sap-order" type="text">
+      <p id="review-modal-tm-note" class="review-modal-hint" hidden>This project is Time &amp; Material — SAP Order stores a <strong>daily rate</strong>, not a total order amount. The Dashboard's "Order amount" column is rate &times; spent &divide; 8.</p>
+      <label for="review-modal-summary">Last rev. summary</label>
+      <input id="review-modal-summary" type="text" maxlength="255">
+      <label for="review-modal-comments">Last rev. comments</label>
+      <textarea id="review-modal-comments" rows="5"></textarea>
+      <p id="review-modal-datenote" class="review-modal-hint"></p>
+      <p class="review-modal-hint" style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+        Estimated/Country/Status/Manager shown on the Dashboard for this project come from the last "Refresh from Redmine" (top of page), not this modal. If they look stale, refresh just this one project instead of waiting for a full refresh. <strong>Spent hours are left unchanged</strong> — this Redmine instance can't filter time entries by project, so getting a fresh Spent figure needs a full refresh (top of page).
+      </p>
+      <button id="review-modal-refresh-one" type="button" class="review-modal-btn secondary">Refresh this project from Redmine</button>
+      <span id="review-modal-refresh-one-status" class="review-modal-hint"></span>
+    </div>
+    <div class="review-modal-actions">
+      <button id="review-modal-cancel" type="button" class="review-modal-btn secondary">Cancel</button>
+      <button id="review-modal-save" type="button" class="review-modal-btn primary">Save to Redmine</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SNAPSHOT_DATA = __PROJECT_DATA__;
+  const SNAPSHOT_DATE = "__REPORT_DATE__";
+  const REDMINE_BASE_URL = "__REDMINE_BASE_URL__";
+  const STORAGE_KEY = "redmine-ledger-v1";
+
+  // Drop-a-CSV and its browser-cached-data feature is disabled for now —
+  // this page always shows exactly the data baked into it when generated,
+  // which is what matters for locally-regenerated dated/latest snapshots.
+  // A stale localStorage cache from an earlier drop was silently
+  // overriding freshly regenerated snapshots, which is why this exists.
+  // The dropzones, file handling, and localStorage read/write code below
+  // are left intact (just hidden/unused) so this can be switched back on
+  // later by flipping this one flag.
+  const DROP_AND_CACHE_ENABLED = false;
+
+  let DATA = SNAPSHOT_DATA;
+  let REPORT_DATE = SNAPSHOT_DATE;
+
+  let sortKey = "spent";
+  let sortDir = -1; // descending by default (biggest engagements first)
+  let filterMode = "all";
+  let searchTerm = "";
+
+  // ---------- persistence: keep the last-loaded CSV in this browser ----------
+  function saveToStorage(rows, dateStr) {
+    if (!DROP_AND_CACHE_ENABLED) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ rows, dateStr, savedAt: Date.now() }));
+    } catch (e) { /* storage unavailable — page still works for this session */ }
+  }
+
+  function loadFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ---------- CSV parsing (handles quoted fields with embedded commas) ----------
+  function parseCsv(text) {
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i], next = text[i + 1];
+      if (inQuotes) {
+        if (c === '"' && next === '"') { field += '"'; i++; }
+        else if (c === '"') { inQuotes = false; }
+        else { field += c; }
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ",") { row.push(field); field = ""; }
+        else if (c === "\r") { /* skip */ }
+        else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+        else field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    if (!rows.length) return [];
+
+    const header = rows[0].map(h => h.trim());
+    return rows.slice(1)
+      .filter(r => r.some(v => v.trim() !== ""))
+      .map(r => {
+        const obj = {};
+        header.forEach((h, i) => obj[h] = (r[i] || "").trim());
+        return obj;
+      });
+  }
+
+  function normalizeRows(rawRows) {
+    return rawRows.map(r => {
+      const est = parseFloat(r["Est. Time"]) || 0;
+      const spent = parseFloat(r["Spent"]) || 0;
+      // Some Redmine exports wrap this field in HTML (e.g. "<p>-25</p>")
+      // if it's a rich-text custom field — strip tags defensively here too.
+      const risk = (r["Risk"] || "").replace(/<[^>]+>/g, "").trim();
+      const riskNum = parseFloat(risk);
+      const remainingVal = est + (Number.isNaN(riskNum) ? 0 : riskNum) - spent;
+      const orderAmount = parseFloat(r["Order amount"]) || 0;
+      return {
+        id: parseInt(r["ID"], 10) || 0,
+        name: r["Name"] || "",
+        rapportCode: (r["Rapport Code"] || "").trim(),
+        orderAmount,
+        est, spent,
+        pct: est ? Math.round((spent / est) * 1000) / 10 : 0,
+        risk,
+        remaining: Math.round(remainingVal * 10) / 10,
+        status: (r["Status"] || "").trim() || "Active",
+        managerId: parseInt(r["Manager ID"], 10) || 0,
+        managerName: (r["Manager"] || "").trim(),
+        summary: (r["Last rev. summary"] || "").trim(),
+        revDate: (r["Last rev. date"] || "").trim(),
+        comments: (r["Last rev. comments"] || "").trim(),
+      };
+    }).filter(r => r.id);
+  }
+
+  function setLoadNote(msg, kind) {
+    const el = document.getElementById("load-note");
+    el.textContent = msg;
+    el.className = "load-note" + (kind ? " " + kind : "");
+  }
+
+  // =====================================================================
+  // TIME ANALYSIS TAB — per-user / per-project / per-issue time entries
+  // =====================================================================
+  const TA_SNAPSHOT_DATA = __TIMESPENT_DATA__;
+  // User ids (strings, matching timespent.csv's user_id column) making up
+  // "My Team" — baked in from ERM/Scripts/my_team.csv by
+  // generate_daily_snapshot.py. Empty on the live dropzone-driven artifact
+  // unless/until that changes; the My Team button just stays hidden then.
+  const TA_TEAM_USER_IDS = __TEAM_USER_IDS__;
+  const TA_STORAGE_KEY = "redmine-timespent-v1";
+  let TA_DATA = TA_SNAPSHOT_DATA;
+  let taSortKey = "spent_on";
+  let taSortDir = -1;
+  // Multi-select: empty Set means "no restriction" (all included) — only
+  // once the user actually checks specific options does the filter narrow.
+  let taFilterUsers = new Set();
+  let taFilterProjects = new Set();
+  let taFilterFrom = "";
+  let taFilterTo = "";
+
+  function taSaveToStorage(rows) {
+    if (!DROP_AND_CACHE_ENABLED) return;
+    try {
+      localStorage.setItem(TA_STORAGE_KEY, JSON.stringify({ rows, savedAt: Date.now() }));
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  function taLoadFromStorage() {
+    try {
+      const raw = localStorage.getItem(TA_STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function taNormalizeRows(rawRows) {
+    return rawRows.map(r => {
+      const hours = parseFloat(r["hours"]) || 0;
+      return {
+        id: r["id"] || "",
+        project_id: r["project_id"] || "",
+        project_name: (r["project_name"] || "").trim(),
+        issue_id: r["issue_id"] || "",
+        user_id: r["user_id"] || "",
+        user_name: (r["user_name"] || "").trim(),
+        activity_name: (r["activity_name"] || "").trim(),
+        hours,
+        spent_on: (r["spent_on"] || "").trim(),
+        comments: (r["comments"] || "").trim(),
+      };
+    }).filter(r => r.project_name || r.user_name);
+  }
+
+  function taSetLoadNote(msg, kind) {
+    const el = document.getElementById("ta-load-note");
+    el.textContent = msg;
+    el.className = "load-note" + (kind ? " " + kind : "");
+  }
+
+  // ---------- multi-select popover (User / Project filters) ----------
+  // A small reusable checkbox-list-in-a-popover control, with a search box
+  // to narrow long lists (60+ projects) and selected items pinned to the
+  // top so they don't get lost while scrolling/searching for more.
+  // `kind` is "user" or "project"; drives which DOM ids/state it talks to.
+  const msState = {
+    user: { set: () => taFilterUsers, options: [], searchTerm: "" },
+    project: { set: () => taFilterProjects, options: [], searchTerm: "" },
+  };
+
+  function msLabel(kind, selectedSet, allOptions, allLabel) {
+    if (selectedSet.size === 0) return allLabel;
+    if (selectedSet.size === allOptions.length) return `All ${allLabel.toLowerCase().replace("all ", "")}`;
+    if (selectedSet.size === 1) return [...selectedSet][0];
+    return `${selectedSet.size} selected`;
+  }
+
+  // Options currently matching the popover's search box (or all options,
+  // if the search box is empty) — the basis for both what's shown and
+  // what "Select all" scopes to.
+  function msVisibleOptions(kind) {
+    const term = msState[kind].searchTerm.trim().toLowerCase();
+    if (!term) return msState[kind].options;
+    return msState[kind].options.filter(opt => opt.toLowerCase().includes(term));
+  }
+
+  function msOptionRow(kind, opt, selectedSet) {
+    return `
+      <label class="ms-option">
+        <input type="checkbox" data-ms-option="${kind}" value="${escapeHtml(opt)}" ${selectedSet.has(opt) ? "checked" : ""}>
+        <span>${escapeHtml(opt)}</span>
+      </label>`;
+  }
+
+  function msRenderOptions(kind) {
+    const optionsEl = document.getElementById(`ms-options-${kind}`);
+    const countEl = document.getElementById(`ms-count-${kind}`);
+    const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+    const visible = msVisibleOptions(kind);
+
+    countEl.textContent = msState[kind].searchTerm.trim()
+      ? `${visible.length} of ${msState[kind].options.length}`
+      : `${msState[kind].options.length} total`;
+
+    if (!visible.length) {
+      optionsEl.innerHTML = `<div class="ms-no-match">No match for "${escapeHtml(msState[kind].searchTerm.trim())}"</div>`;
+      return;
+    }
+
+    // Selected-and-visible items pinned in their own group at the top, so
+    // they stay in view while scrolling or searching for more to add —
+    // otherwise a selection made earlier can scroll out of sight in a
+    // 60+ item list. Only shown as a separate group once there's also at
+    // least one unselected option, to avoid a redundant "Selected" header
+    // when everything visible happens to already be selected.
+    const selectedVisible = visible.filter(opt => selectedSet.has(opt));
+    const unselectedVisible = visible.filter(opt => !selectedSet.has(opt));
+
+    let html = "";
+    if (selectedVisible.length && unselectedVisible.length) {
+      html += `<div class="ms-group-label">Selected (${selectedVisible.length})</div>`;
+      html += selectedVisible.map(opt => msOptionRow(kind, opt, selectedSet)).join("");
+      html += `<hr class="ms-group-divider">`;
+      html += unselectedVisible.map(opt => msOptionRow(kind, opt, selectedSet)).join("");
+    } else {
+      html += visible.map(opt => msOptionRow(kind, opt, selectedSet)).join("");
+    }
+    optionsEl.innerHTML = html;
+
+    optionsEl.querySelectorAll(`input[data-ms-option="${kind}"]`).forEach(cb => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedSet.add(cb.value);
+        else selectedSet.delete(cb.value);
+        msRenderOptions(kind); // re-render so the item jumps to/from the pinned group
+        msUpdateButtonLabel(kind);
+        taRenderRows();
+      });
+    });
+  }
+
+  function msUpdateButtonLabel(kind) {
+    const btn = document.getElementById(`ms-btn-${kind}`);
+    const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+    const allLabel = kind === "user" ? "All users" : "All projects";
+    btn.textContent = msLabel(kind, selectedSet, msState[kind].options, allLabel);
+    btn.classList.toggle("has-selection", selectedSet.size > 0);
+  }
+
+  function msPopulate(kind, values) {
+    msState[kind].options = [...new Set(values)].filter(Boolean).sort();
+    // Drop any previously-selected values that no longer exist in the data
+    // (e.g. a fresh CSV load with a different set of users/projects).
+    const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+    [...selectedSet].forEach(v => { if (!msState[kind].options.includes(v)) selectedSet.delete(v); });
+    msState[kind].searchTerm = "";
+    const searchInput = document.getElementById(`ms-search-${kind}`);
+    if (searchInput) searchInput.value = "";
+    msRenderOptions(kind);
+    msUpdateButtonLabel(kind);
+  }
+
+  function msTogglePopover(kind, forceClose) {
+    const popover = document.getElementById(`ms-popover-${kind}`);
+    const btn = document.getElementById(`ms-btn-${kind}`);
+    const shouldOpen = forceClose ? false : popover.hidden;
+    popover.hidden = !shouldOpen;
+    btn.setAttribute("aria-expanded", String(shouldOpen));
+    if (shouldOpen) {
+      const searchInput = document.getElementById(`ms-search-${kind}`);
+      if (searchInput) setTimeout(() => searchInput.focus(), 0);
+    }
+  }
+
+  function msCloseAll(exceptKind) {
+    ["user", "project"].forEach(kind => {
+      if (kind !== exceptKind) msTogglePopover(kind, true);
+    });
+  }
+
+  function taPopulateFilterOptions() {
+    msPopulate("user", TA_DATA.map(r => r.user_name));
+    msPopulate("project", TA_DATA.map(r => r.project_name));
+    // "My Team" only makes sense once we know which of the *currently
+    // loaded* users are on the team — id-matched against TA_DATA, not
+    // just "does TA_TEAM_USER_IDS have entries", so the button hides
+    // itself if none of today's data happens to be from team members.
+    const teamNames = taTeamUserNames();
+    document.getElementById("ta-my-team").hidden = teamNames.length === 0;
+  }
+
+  // Resolves TA_TEAM_USER_IDS (ids from my_team.csv, baked in by
+  // generate_daily_snapshot.py) against the user_id -> user_name mapping
+  // seen in the currently loaded TA_DATA, since the User filter operates
+  // on names, not ids.
+  function taTeamUserNames() {
+    if (!TA_TEAM_USER_IDS.length) return [];
+    const idToName = new Map();
+    TA_DATA.forEach(r => { if (r.user_id) idToName.set(String(r.user_id), r.user_name); });
+    return TA_TEAM_USER_IDS.map(id => idToName.get(String(id))).filter(Boolean);
+  }
+
+  function taApplyCsvText(text, sourceLabel) {
+    try {
+      const rawRows = parseCsv(text);
+      const rows = taNormalizeRows(rawRows);
+      if (!rows.length) throw new Error("no time entries found in this file.");
+
+      TA_DATA = rows;
+      taSaveToStorage(rows);
+      taPopulateFilterOptions();
+      taRenderRows();
+      taSetLoadNote(`Loaded ${rows.length} time entr${rows.length === 1 ? "y" : "ies"} from ${sourceLabel} · saved in this browser for next time`, "ok");
+    } catch (err) {
+      taSetLoadNote(`Could not read that file — ${err.message}`, "err");
+    }
+  }
+
+  function taHandleFile(file) {
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name)) {
+      taSetLoadNote("That doesn't look like a .csv file — pick timespent.csv.", "err");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => taApplyCsvText(e.target.result, file.name);
+    reader.onerror = () => taSetLoadNote("Could not read that file.", "err");
+    reader.readAsText(file);
+  }
+
+  // Look up a project's overall Est./Spent from the Projects tab data
+  // (DATA, from redmine_project_list.csv), matched by name — gives the
+  // Time Analysis grouping context on total budget vs. logged time,
+  // without needing a second copy of that data in timespent.csv.
+  function taProjectTotals(projectName) {
+    const p = DATA.find(d => d.name === projectName);
+    if (!p) return null;
+    return { est: p.est, spent: p.spent };
+  }
+
+  function taMatchesFilters(r) {
+    if (taFilterUsers.size && !taFilterUsers.has(r.user_name)) return false;
+    if (taFilterProjects.size && !taFilterProjects.has(r.project_name)) return false;
+    if (taFilterFrom && r.spent_on && r.spent_on < taFilterFrom) return false;
+    if (taFilterTo && r.spent_on && r.spent_on > taFilterTo) return false;
+    return true;
+  }
+
+  function taRenderRows() {
+    const rows = TA_DATA.filter(taMatchesFilters);
+
+    // Group by project, sort groups by project name; within each group,
+    // sort entries by the active column sort.
+    const groups = new Map();
+    rows.forEach(r => {
+      const key = r.project_name || "(no project)";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    });
+
+    const sortedGroupKeys = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+
+    const sortEntries = (entries) => {
+      entries.sort((a, b) => {
+        let av = a[taSortKey], bv = b[taSortKey];
+        if (typeof av === "string") return av.localeCompare(bv) * taSortDir;
+        return (av - bv) * taSortDir;
+      });
+      return entries;
+    };
+
+    const tbody = document.getElementById("ta-tbody");
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="no-results">No time entries match these filters.</td></tr>`;
+    } else {
+      let html = "";
+      sortedGroupKeys.forEach(projName => {
+        const entries = sortEntries(groups.get(projName));
+        const projId = entries[0].project_id;
+        const totals = taProjectTotals(projName);
+        const groupHours = entries.reduce((a, e) => a + e.hours, 0);
+
+        let metricsHtml = `<span><span class="m-label">Logged (filtered)</span>${fmtHours(groupHours)}h</span>`;
+        if (totals) {
+          const overCls = totals.est > 0 && totals.spent > totals.est ? "m-over" : "";
+          metricsHtml = `
+            <span><span class="m-label">Est.</span>${fmtHours(totals.est)}h</span>
+            <span class="${overCls}"><span class="m-label">Spent (total)</span>${fmtHours(totals.spent)}h</span>
+            ${metricsHtml}`;
+        }
+
+        html += `
+          <tr class="proj-group-row">
+            <td colspan="6">
+              <div class="proj-group-head">
+                <div class="proj-group-name">${projId ? `<span class="pgid">${Number(projId) < 0 ? "KSA-" + (-Number(projId)) : "#" + escapeHtml(String(projId))}</span>` : ""}${escapeHtml(projName)}</div>
+                <div class="proj-group-metrics">${metricsHtml}</div>
+              </div>
+            </td>
+          </tr>`;
+
+        entries.forEach(e => {
+          html += `
+            <tr>
+              <td class="mono">${escapeHtml(e.spent_on || "—")}</td>
+              <td class="entry-name">${escapeHtml(e.user_name || "—")}</td>
+              <td class="mono">${e.issue_id ? "#" + escapeHtml(String(e.issue_id)) : '<span class="empty-dash">—</span>'}</td>
+              <td>${escapeHtml(e.activity_name || "—")}</td>
+              <td class="num">${fmtHours(e.hours)}</td>
+              <td class="comments-cell">${e.comments ? escapeHtml(e.comments) : '<span class="empty-dash">—</span>'}</td>
+            </tr>`;
+        });
+      });
+      tbody.innerHTML = html;
+    }
+
+    document.getElementById("ta-count-note").textContent =
+      `Showing ${rows.length} of ${TA_DATA.length} time entr${TA_DATA.length === 1 ? "y" : "ies"}`;
+
+    const totalHours = rows.reduce((a, r) => a + r.hours, 0);
+    document.getElementById("ta-stat-entries").textContent = rows.length;
+    document.getElementById("ta-stat-hours").textContent = fmtHours(totalHours);
+    document.getElementById("ta-stat-users").textContent = new Set(rows.map(r => r.user_name).filter(Boolean)).size;
+    document.getElementById("ta-stat-projects").textContent = new Set(rows.map(r => r.project_name).filter(Boolean)).size;
+    fitStatNumbers();
+
+    document.querySelectorAll("#tab-time thead th").forEach(th => {
+      th.classList.toggle("sorted", th.dataset.key === taSortKey);
+      const arrow = th.querySelector(".arrow");
+      if (arrow) arrow.remove();
+      if (th.dataset.key && th.dataset.key === taSortKey) {
+        th.insertAdjacentHTML("beforeend", `<span class="arrow">${taSortDir === 1 ? "▲" : "▼"}</span>`);
+      }
+    });
+
+    taRenderCharts(rows);
+  }
+
+  // ---------- time analysis: bar charts (hours by user / by project) ----------
+  // Plain inline SVG, no charting library — keeps this a single
+  // self-contained file and avoids any external script dependency.
+  function taBuildBarChart(containerId, data, labelKey) {
+    const container = document.getElementById(containerId);
+    if (!data.length) {
+      container.innerHTML = `<div class="chart-empty">No data for the current filters.</div>`;
+      return;
+    }
+
+    // Sort descending by hours, cap to a readable number of bars.
+    const sorted = [...data].sort((a, b) => b.hours - a.hours).slice(0, 15);
+    const maxHours = Math.max(...sorted.map(d => d.hours), 0.01);
+
+    const barCount = sorted.length;
+    const chartW = 640;
+    const chartH = 260;
+    const marginTop = 10;
+    const marginBottom = 70;
+    const marginLeft = 10;
+    const marginRight = 10;
+    const plotW = chartW - marginLeft - marginRight;
+    const plotH = chartH - marginTop - marginBottom;
+    const gap = 10;
+    const barW = Math.max((plotW - gap * (barCount - 1)) / barCount, 4);
+
+    let bars = "";
+    sorted.forEach((d, i) => {
+      const barH = (d.hours / maxHours) * plotH;
+      const x = marginLeft + i * (barW + gap);
+      const y = marginTop + (plotH - barH);
+      const label = String(d[labelKey]);
+      const shortLabel = label.length > 14 ? label.slice(0, 13) + "…" : label;
+
+      bars += `
+        <rect class="chart-bar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2">
+          <title>${escapeHtml(label)}: ${fmtHours(d.hours)}h</title>
+        </rect>
+        <text class="chart-value-label" x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle">${fmtHours(d.hours)}</text>
+        <text class="chart-axis-label" x="${(x + barW / 2).toFixed(1)}" y="${(marginTop + plotH + 14).toFixed(1)}" text-anchor="end" transform="rotate(-40 ${(x + barW / 2).toFixed(1)} ${(marginTop + plotH + 14).toFixed(1)})">${escapeHtml(shortLabel)}<title>${escapeHtml(label)}</title></text>`;
+    });
+
+    container.innerHTML = `<svg viewBox="0 0 ${chartW} ${chartH}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
+  }
+
+  function taRenderCharts(rows) {
+    const byUser = new Map();
+    const byProject = new Map();
+    rows.forEach(r => {
+      if (r.user_name) byUser.set(r.user_name, (byUser.get(r.user_name) || 0) + r.hours);
+      if (r.project_name) byProject.set(r.project_name, (byProject.get(r.project_name) || 0) + r.hours);
+    });
+
+    const userData = [...byUser.entries()].map(([user_name, hours]) => ({ user_name, hours }));
+    const projectData = [...byProject.entries()].map(([project_name, hours]) => ({ project_name, hours }));
+
+    taBuildBarChart("chart-by-user", userData, "user_name");
+    taBuildBarChart("chart-by-project", projectData, "project_name");
+  }
+
+  function applyCsvText(text, sourceLabel) {
+    try {
+      const rawRows = parseCsv(text);
+      const rows = normalizeRows(rawRows);
+      if (!rows.length) throw new Error("no project rows found in this file.");
+
+      const today = new Date().toISOString().slice(0, 10);
+      DATA = rows;
+      REPORT_DATE = today;
+      saveToStorage(rows, today);
+
+      renderStats(DATA);
+      renderRows();
+      setLoadNote(`Loaded ${rows.length} project(s) from ${sourceLabel} · saved in this browser for next time`, "ok");
+    } catch (err) {
+      setLoadNote(`Could not read that file — ${err.message}`, "err");
+    }
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name)) {
+      setLoadNote("That doesn't look like a .csv file — pick redmine_project_list.csv.", "err");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => applyCsvText(e.target.result, file.name);
+    reader.onerror = () => setLoadNote("Could not read that file.", "err");
+    reader.readAsText(file);
+  }
+
+  function fmtHours(n) {
+    return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  }
+
+  // Row-level amounts (e.g. the Order amount column) show 2 decimal places.
+  // Locale pinned to en-US (rather than the viewer's own locale) so
+  // thousand separators are always commas, consistently, at every
+  // magnitude — thousands, millions, etc. — regardless of browser/OS
+  // locale settings.
+  function fmtMoney(n) {
+    return "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // KPI stat cards (Total order amount, Open amount) round to whole dollars.
+  function fmtMoneyRounded(n) {
+    return "$" + Math.round(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  }
+
+  // Risk convention: negative = better (healthier), positive = worse.
+  // Renders a signed value with color coded to that direction; blank/NaN
+  // shows as a dash since most projects have no risk score entered yet.
+  function riskCell(risk) {
+    if (risk === "" || risk === null || typeof risk === "undefined") {
+      return '<span class="empty-dash">—</span>';
+    }
+    const n = typeof risk === "number" ? risk : parseFloat(risk);
+    if (Number.isNaN(n)) {
+      return `<span class="empty-dash">${escapeHtml(String(risk))}</span>`;
+    }
+    let cls = "neutral";
+    if (n < 0) cls = "good";
+    else if (n > 0) cls = "warn";
+    const sign = n > 0 ? "+" : "";
+    return `<span class="risk-pill ${cls}">${sign}${n}</span>`;
+  }
+
+  // A project counts as over budget only when it has a real estimate to
+  // compare against — with no estimate, "spent > 0" isn't meaningful overspend.
+  function isOverspent(p) {
+    return p.est > 0 && p.spent > p.est;
+  }
+
+  // Combined "Spent / Est." display — replaces the old separate Est. hrs
+  // and Spent hrs columns with a single column, e.g. "12.5 / 40.0".
+  function spentCell(p) {
+    const spentHours = p.spent ? fmtHours(p.spent) : "0";
+    const estHours = p.est ? fmtHours(p.est) : "—";
+    const combined = `${spentHours} / ${estHours}`;
+    if (!p.spent && !p.est) {
+      return '<span class="empty-dash">—</span>';
+    }
+    if (!p.est) {
+      return `<span>${combined}</span>`;
+    }
+    const pct = Math.round((p.spent / p.est) * 100);
+    if (isOverspent(p)) {
+      return `<span class="spent-pill over">${combined} <span class="spent-pct">(${pct}%)</span></span>`;
+    }
+    return `<span>${combined} <span class="spent-pct muted">(${pct}%)</span></span>`;
+  }
+
+  // Remaining = Est. hours + Risk - Spent (computed once in normalizeRows,
+  // stored as p.remaining). Risk carries a sign convention where negative
+  // is favorable (buffer) and positive is unfavorable (extra hours at
+  // risk) — folding it in this way means a project with positive risk
+  // needs more remaining runway to stay healthy, and one with negative
+  // risk has some cushion built in. Blank risk contributes 0, so the
+  // formula quietly degrades to plain Est - Spent for projects without
+  // a risk score yet.
+  function isNegativeRemaining(p) {
+    return p.remaining < 0;
+  }
+
+  // Visually distinguishes closed projects from open ones in the Status
+  // column — previously both rendered with the same "active" green pill,
+  // making status text the only way to tell them apart.
+  function statusPill(status) {
+    const cls = status === "Closed" ? "closed" : "active";
+    return `<span class="pill ${cls}">${escapeHtml(status)}</span>`;
+  }
+
+  function remainingCell(p) {
+    // Defensive: a stale/hand-edited snapshot might omit `remaining` even
+    // though normalizeRows() always computes it for freshly loaded CSVs.
+    if (typeof p.remaining !== "number" || Number.isNaN(p.remaining)) {
+      const riskNum = parseFloat(p.risk);
+      p.remaining = Math.round((p.est + (Number.isNaN(riskNum) ? 0 : riskNum) - p.spent) * 10) / 10;
+    }
+    const cls = p.remaining < 0 ? "neg" : "pos";
+    const sign = p.remaining > 0 ? "+" : "";
+    return `<span class="remaining-pill ${cls}">${sign}${fmtHours(p.remaining)}</span>`;
+  }
+
+  function daysAgo(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + "T00:00:00");
+    const ref = new Date(REPORT_DATE + "T00:00:00");
+    return Math.round((ref - d) / 86400000);
+  }
+
+  function renderStats(allRows) {
+    // Every KPI card honors the header Project Manager dropdown — narrow
+    // to that manager's projects first, then compute all the cards off
+    // that same filtered set (falls back to everyone when unset).
+    const rows = selectedManagerId ? allRows.filter(p => String(p.managerId) === selectedManagerId) : allRows;
+
+    document.getElementById("stat-total").textContent = rows.length;
+    const noReview = rows.filter(p => !p.revDate).length;
+    document.getElementById("stat-noreview").textContent = noReview;
+    const overspent = rows.filter(isOverspent).length;
+    document.getElementById("stat-overspent").textContent = overspent;
+    const negRemaining = rows.filter(isNegativeRemaining).length;
+    document.getElementById("stat-negremaining").textContent = negRemaining;
+
+    const totalOrder = rows.reduce((a, p) => a + (p.orderAmount || 0), 0);
+    document.getElementById("stat-order-total").textContent = fmtMoneyRounded(totalOrder);
+    const openOrder = rows.filter(p => p.status === "Active").reduce((a, p) => a + (p.orderAmount || 0), 0);
+    document.getElementById("stat-order-open").textContent = fmtMoneyRounded(openOrder);
+
+    fitStatNumbers();
+  }
+
+  // Safety net on top of .stat .n's CSS container-query sizing: that
+  // formula is tuned for typical digit counts, but an unusually long
+  // value (or a very narrow card) can still overflow. Shrinks the font
+  // further, one px at a time, until the text actually fits its box.
+  function fitStatNumbers() {
+    document.querySelectorAll(".stat .n").forEach(el => {
+      el.style.fontSize = "";
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      const minSize = 11;
+      let guard = 0;
+      while (el.scrollWidth > el.clientWidth && size > minSize && guard < 30) {
+        size -= 1;
+        el.style.fontSize = size + "px";
+        guard++;
+      }
+    });
+  }
+
+  let fitStatNumbersResizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(fitStatNumbersResizeTimer);
+    fitStatNumbersResizeTimer = setTimeout(fitStatNumbers, 120);
+  });
+
+  // Header-level Project Manager dropdown — layers on top of whichever
+  // filter chip is active, narrowing it to projects where the selected
+  // user is the manager (e.g. pick "Over budget" with a manager selected
+  // and you see only that manager's over-budget projects). Defaults to
+  // this user's own configured Project Manager id (Settings page).
+  // Other managers' projects remain fully present in the underlying data
+  // (and in the Time Analysis tab) either way — this is a display-only
+  // filter, it doesn't remove anything from the fetched data.
+  const DEFAULT_MANAGER_ID = __DEFAULT_MANAGER_ID__;
+  // KSA projects that have uploaded timesheet hours (not in DATA — KSA isn't in Redmine),
+  // so the Time Analysis Project Manager filter can select the KSA manager.
+  const KSA_PROJECTS = __KSA_PROJECTS__;
+  let selectedManagerId = "";
+  let selectedCountry = "";
+
+  function matchesChipFilter(p) {
+    if (filterMode === "open") return p.status === "Active";
+    if (filterMode === "unreviewed") return !p.revDate;
+    if (filterMode === "reviewed") return !!p.revDate;
+    if (filterMode === "overspent") return isOverspent(p);
+    if (filterMode === "negative-remaining") return isNegativeRemaining(p);
+    return true; // "all"
+  }
+
+  function matchesFilter(p) {
+    if (!matchesChipFilter(p)) return false;
+    if (selectedManagerId && String(p.managerId) !== selectedManagerId) return false;
+    if (selectedCountry && (p.country || "") !== selectedCountry) return false;
+    return true;
+  }
+
+  // Multi-word search: split on whitespace and require every token to
+  // match somewhere (AND across tokens) — e.g. "Dhow closed" only matches
+  // projects containing both "Dhow" AND "closed" (in any of the fields
+  // below, not necessarily the same one). A single-word search behaves
+  // exactly as before.
+  function matchesSearch(p) {
+    if (!searchTerm) return true;
+    const tokens = searchTerm.toLowerCase().split(/\s+/).filter(Boolean);
+    const haystacks = [
+      p.name.toLowerCase(),
+      String(p.id),
+      p.rapportCode.toLowerCase(),
+      (p.country || "").toLowerCase(),
+      p.summary.toLowerCase(),
+      p.comments.toLowerCase(),
+    ];
+    return tokens.every(tok => haystacks.some(h => h.includes(tok)));
+  }
+
+  // Latest logged time-entry date per project, sourced from the Time
+  // Analysis tab's dataset (TA_DATA) so the Projects tab can show which
+  // projects are actively being worked on. Recomputed on each render since
+  // TA_DATA is small and this is O(n) — no caching needed.
+  function buildRecentLogMap() {
+    const map = {};
+    for (const e of TA_DATA) {
+      if (!e.project_id || !e.spent_on) continue;
+      const pid = String(e.project_id);
+      if (!map[pid] || e.spent_on > map[pid]) map[pid] = e.spent_on;
+    }
+    return map;
+  }
+
+  function renderRows() {
+    let rows = DATA.filter(p => matchesFilter(p) && matchesSearch(p));
+    const recentLogMap = buildRecentLogMap();
+
+    rows.sort((a, b) => {
+      let av = a[sortKey], bv = b[sortKey];
+      if (sortKey === "recentLog") {
+        av = recentLogMap[String(a.id)] || "0000-00-00";
+        bv = recentLogMap[String(b.id)] || "0000-00-00";
+      }
+      if (sortKey === "revDate") {
+        av = av || "0000-00-00";
+        bv = bv || "0000-00-00";
+      }
+      if (sortKey === "risk") {
+        // Blank risk sorts to the end regardless of direction — it's
+        // "unscored", not a value on the good/bad scale.
+        const an = parseFloat(av), bn = parseFloat(bv);
+        const aBlank = av === "" || Number.isNaN(an);
+        const bBlank = bv === "" || Number.isNaN(bn);
+        if (aBlank && bBlank) return 0;
+        if (aBlank) return 1;
+        if (bBlank) return -1;
+        return (an - bn) * sortDir;
+      }
+      if (typeof av === "string") {
+        return av.localeCompare(bv) * sortDir;
+      }
+      return (av - bv) * sortDir;
+    });
+
+    const tbody = document.getElementById("tbody");
+
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="11" class="no-results">No projects match this search.</td></tr>`;
+    } else {
+      tbody.innerHTML = rows.map(p => {
+        const age = daysAgo(p.revDate);
+        let reviewCell;
+        if (p.revDate) {
+          const cls = age !== null && age > 30 ? "stale" : "fresh";
+          reviewCell = `
+            <div class="rev-summary">${p.summary ? escapeHtml(p.summary) : '<span class="empty-dash">—</span>'}</div>
+            <div class="rev-date ${cls}">${p.revDate}${age !== null ? ` · ${age}d ago` : ""}</div>`;
+        } else {
+          reviewCell = `<span class="rev-empty">Not yet reviewed</span>`;
+        }
+
+        const recentLog = recentLogMap[String(p.id)] || "";
+        const recentLogAge = recentLog ? daysAgo(recentLog) : null;
+        const recentLogCell = recentLog
+          ? `<span class="${recentLogAge !== null && recentLogAge > 30 ? "stale" : "fresh"}">${recentLog}${recentLogAge !== null ? ` · ${recentLogAge}d ago` : ""}</span>`
+          : '<span class="empty-dash">—</span>';
+
+        return `
+          <tr class="row-link" data-id="${p.id}" tabindex="0" role="button" title="Edit project #${p.id}">
+            <td class="id">#${p.id}<button type="button" class="view-btn" data-id="${p.id}" title="Open project #${p.id} in Redmine">View</button></td>
+            <td class="name">
+              <div class="n">${escapeHtml(p.name)}</div>
+              ${p.rapportCode ? `<div class="rcode-sub">${escapeHtml(p.rapportCode)}</div>` : ""}
+            </td>
+            <td>${p.country ? escapeHtml(p.country) : '<span class="empty-dash">—</span>'}</td>
+            <td>${p.managerName ? escapeHtml(p.managerName) : '<span class="empty-dash">—</span>'}</td>
+            <td class="num">${p.orderAmount ? fmtMoney(p.orderAmount) : '<span class="empty-dash">—</span>'}</td>
+            <td class="num">${spentCell(p)}</td>
+            <td class="num">${riskCell(p.risk)}</td>
+            <td class="num">${remainingCell(p)}</td>
+            <td>${statusPill(p.status)}</td>
+            <td class="review">${reviewCell}</td>
+            <td class="recent-log">${recentLogCell}</td>
+          </tr>`;
+      }).join("");
+    }
+
+    document.getElementById("count-note").textContent =
+      `Showing ${rows.length} of ${DATA.length} project${DATA.length === 1 ? "" : "s"}`;
+
+    document.querySelectorAll("thead th").forEach(th => {
+      th.classList.toggle("sorted", th.dataset.key === sortKey);
+      const arrow = th.querySelector(".arrow");
+      if (arrow) arrow.remove();
+      if (th.dataset.key === sortKey) {
+        th.insertAdjacentHTML("beforeend", `<span class="arrow">${sortDir === 1 ? "▲" : "▼"}</span>`);
+      }
+    });
+
+    tbody.querySelectorAll("tr.row-link").forEach(tr => {
+      const openEditor = () => openReviewEditor(parseInt(tr.dataset.id, 10));
+      tr.addEventListener("click", openEditor);
+      tr.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openEditor();
+        }
+      });
+    });
+
+    tbody.querySelectorAll(".view-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        if (id) window.open(`${REDMINE_BASE_URL}/projects/${id}`, "_blank", "noopener");
+      });
+    });
+  }
+
+  // ---------- project editor (writes Risk / SAP Order / review fields back to Redmine) ----------
+  async function openReviewEditor(projectId) {
+    const p = DATA.find(x => x.id === projectId);
+    if (!p) return;
+
+    const fieldsEl = document.getElementById("review-modal-fields");
+    const loadingEl = document.getElementById("review-modal-loading");
+    const errorEl = document.getElementById("review-modal-error");
+    const saveBtn = document.getElementById("review-modal-save");
+
+    document.getElementById("review-modal-title").textContent = `Edit project — #${p.id} ${p.name}`;
+    document.getElementById("review-modal").dataset.projectId = String(projectId);
+    errorEl.textContent = "";
+    document.getElementById("review-modal-refresh-one-status").textContent = "";
+    fieldsEl.hidden = true;
+    loadingEl.hidden = false;
+    saveBtn.disabled = true;
+    document.getElementById("review-modal-backdrop").style.display = "flex";
+
+    try {
+      // Risk/SAP Order are fetched fresh from Redmine rather than read
+      // from the cached DATA row — the Dashboard's "Order amount" is a
+      // T&M-transformed figure for T&M projects, not the raw field, so
+      // editing must start from the real current value.
+      const resp = await fetch(`/api/projects/${projectId}/fields`);
+      const fields = await resp.json();
+      if (!resp.ok) throw new Error(fields.detail || "Could not load current values from Redmine.");
+
+      document.getElementById("review-modal-risk").value = fields.risk || "";
+      document.getElementById("review-modal-sap-order").value = fields.sapOrder || "";
+      document.getElementById("review-modal-tm-note").hidden = !fields.isTM;
+      document.getElementById("review-modal-summary").value = p.summary || "";
+      document.getElementById("review-modal-comments").value = p.comments || "";
+      document.getElementById("review-modal-datenote").textContent =
+        `Last review date will be set to today (${new Date().toISOString().slice(0, 10)}) when you save.`;
+      fieldsEl.hidden = false;
+      loadingEl.hidden = true;
+      saveBtn.disabled = false;
+      document.getElementById("review-modal-risk").focus();
+    } catch (err) {
+      loadingEl.hidden = true;
+      errorEl.textContent = err.message;
+    }
+  }
+
+  function closeReviewEditor() {
+    document.getElementById("review-modal-backdrop").style.display = "none";
+  }
+
+  async function saveReviewEditor() {
+    const modal = document.getElementById("review-modal");
+    const projectId = parseInt(modal.dataset.projectId, 10);
+    const risk = document.getElementById("review-modal-risk").value;
+    const sap_order = document.getElementById("review-modal-sap-order").value;
+    const summary = document.getElementById("review-modal-summary").value;
+    const comments = document.getElementById("review-modal-comments").value;
+    const errorEl = document.getElementById("review-modal-error");
+    const saveBtn = document.getElementById("review-modal-save");
+
+    saveBtn.disabled = true;
+    errorEl.textContent = "";
+    try {
+      const resp = await fetch(`/api/projects/${projectId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary, comments, risk, sap_order }),
+      });
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.detail || "Save failed.");
+
+      const p = DATA.find(x => x.id === projectId);
+      if (p) {
+        p.summary = body.summary;
+        p.comments = body.comments;
+        p.revDate = body.revDate;
+        p.risk = body.risk;
+        p.orderAmount = body.orderAmount;
+      }
+      closeReviewEditor();
+      renderRows();
+    } catch (err) {
+      errorEl.textContent = err.message;
+    } finally {
+      saveBtn.disabled = false;
+    }
+  }
+
+  // Refreshes just this ONE project's Estimated/Spent/Country/Manager/
+  // Status/Risk/SAP Order from Redmine — for chasing a single-project
+  // discrepancy without waiting for a full "Refresh from Redmine" pass.
+  async function refreshOneProject() {
+    const modal = document.getElementById("review-modal");
+    const projectId = parseInt(modal.dataset.projectId, 10);
+    const btn = document.getElementById("review-modal-refresh-one");
+    const statusEl = document.getElementById("review-modal-refresh-one-status");
+
+    btn.disabled = true;
+    statusEl.textContent = "Refreshing from Redmine…";
+    try {
+      const resp = await fetch(`/api/projects/${projectId}/refresh`, { method: "POST" });
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.detail || "Refresh failed.");
+
+      const idx = DATA.findIndex(x => x.id === projectId);
+      if (idx !== -1) {
+        // Preserve locally-edited review fields (summary/comments/revDate)
+        // and the T&M-transformed orderAmount already shown — this project
+        // refresh re-derives orderAmount from the raw SAP Order field,
+        // which is what we want here (spent may have changed too).
+        DATA[idx] = { ...DATA[idx], ...body.project };
+      }
+      statusEl.textContent = `Refreshed just now — Estimated ${body.project.est}, Country ${body.project.country || "—"} (Spent unchanged: ${body.project.spent}).`;
+      renderRows();
+      renderStats(DATA);
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById("review-modal-refresh-one").addEventListener("click", refreshOneProject);
+  document.getElementById("review-modal-cancel").addEventListener("click", closeReviewEditor);
+  document.getElementById("review-modal-save").addEventListener("click", saveReviewEditor);
+  document.getElementById("review-modal-backdrop").addEventListener("click", (e) => {
+    if (e.target.id === "review-modal-backdrop") closeReviewEditor();
+  });
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  document.querySelectorAll("thead th").forEach(th => {
+    th.tabIndex = 0;
+    const activate = () => {
+      const key = th.dataset.key;
+      if (sortKey === key) {
+        sortDir *= -1;
+      } else {
+        sortKey = key;
+        // Risk: negative (better) first by default. Other numeric
+        // columns (hours, id) default to largest-first.
+        sortDir = key === "risk" ? 1 : (th.dataset.type === "num" ? -1 : 1);
+      }
+      renderRows();
+    };
+    th.addEventListener("click", activate);
+    th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } });
+  });
+
+  document.querySelectorAll(".filter-chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".filter-chip").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      filterMode = btn.dataset.filter;
+
+      // Reviewing status is inherently about recency — when either review
+      // filter is picked, switch the sort to Last review date so the most
+      // overdue (or, for "Reviewed", most/least recent) projects surface
+      // right away instead of leaving whatever sort was active before.
+      if (filterMode === "unreviewed" || filterMode === "reviewed") {
+        sortKey = "revDate";
+        sortDir = 1; // oldest/least-recent first — the ones most overdue
+      }
+
+      renderRows();
+    });
+  });
+
+  // Distinct managers present in the fetched project data, shared by both
+  // the Dashboard's and Time Analysis tab's Project Manager dropdowns.
+  const MANAGER_MAP = new Map();
+  DATA.forEach(p => {
+    if (p.managerId && !MANAGER_MAP.has(String(p.managerId))) MANAGER_MAP.set(String(p.managerId), p.managerName || `#${p.managerId}`);
+  });
+  const MANAGER_OPTIONS = Array.from(MANAGER_MAP.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  // Time Analysis offers the KSA manager too (Projects/Dashboard filters don't — no KSA rows there).
+  const TA_MANAGER_OPTIONS = MANAGER_OPTIONS.slice();
+  KSA_PROJECTS.forEach(p => { if (!TA_MANAGER_OPTIONS.some(([id]) => id === String(p.managerId))) TA_MANAGER_OPTIONS.push([String(p.managerId), p.managerName]); });
+  TA_MANAGER_OPTIONS.sort((a, b) => a[1].localeCompare(b[1]));
+
+  // Populate the Project Manager dropdown and default it to this user's
+  // own configured Project Manager id (if that id actually manages any
+  // project here — otherwise falls back to "All managers").
+  (function setupManagerDropdown() {
+    const select = document.getElementById("manager-select");
+    MANAGER_OPTIONS.forEach(([id, name]) => select.insertAdjacentHTML("beforeend", `<option value="${id}">${escapeHtml(name)}</option>`));
+
+    if (DEFAULT_MANAGER_ID && MANAGER_MAP.has(String(DEFAULT_MANAGER_ID))) {
+      select.value = String(DEFAULT_MANAGER_ID);
+      selectedManagerId = String(DEFAULT_MANAGER_ID);
+    }
+
+    select.addEventListener("change", () => {
+      selectedManagerId = select.value;
+      renderRows();
+      // Total/Open order amount are the only stat cards that honor this
+      // dropdown — refresh them off the full dataset (not the filtered
+      // table rows) to match every other stat card's "always everyone"
+      // baseline.
+      renderStats(DATA);
+    });
+  })();
+
+  // Distinct countries present in the fetched project data — same pattern
+  // as MANAGER_OPTIONS above, for the header Country dropdown.
+  const COUNTRY_OPTIONS = Array.from(new Set(DATA.map(p => p.country).filter(Boolean))).sort();
+
+  (function setupCountryDropdown() {
+    const select = document.getElementById("country-select");
+    if (!select) return;
+    COUNTRY_OPTIONS.forEach(c => select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
+    select.addEventListener("change", () => {
+      selectedCountry = select.value;
+      renderRows();
+      renderStats(DATA);
+    });
+  })();
+
+  // Time Analysis tab's Project Manager dropdown: selecting a manager
+  // restricts the existing Project multi-select to just that manager's
+  // projects (same mechanism "My Team" already uses for the User filter).
+  // Applying the *default* selection is deferred until after the Time
+  // Analysis tab's own initial-render block (further down this script,
+  // where TA_DATA/the Project filter options actually get populated) —
+  // doing it here would apply against an empty options list.
+  function applyTaManagerFilter(managerId) {
+    taFilterProjects.clear();
+    if (managerId) {
+      DATA.filter(p => String(p.managerId) === managerId).forEach(p => taFilterProjects.add(p.name));
+      KSA_PROJECTS.filter(p => String(p.managerId) === managerId).forEach(p => taFilterProjects.add(p.name));
+    }
+    msRenderOptions("project");
+    msUpdateButtonLabel("project");
+    taRenderRows();
+  }
+
+  (function setupTaManagerDropdown() {
+    const select = document.getElementById("ta-manager-select");
+    TA_MANAGER_OPTIONS.forEach(([id, name]) => select.insertAdjacentHTML("beforeend", `<option value="${id}">${escapeHtml(name)}</option>`));
+    if (DEFAULT_MANAGER_ID && MANAGER_MAP.has(String(DEFAULT_MANAGER_ID))) {
+      select.value = String(DEFAULT_MANAGER_ID);
+    }
+    select.addEventListener("change", () => applyTaManagerFilter(select.value));
+  })();
+
+  document.getElementById("search").addEventListener("input", (e) => {
+    searchTerm = e.target.value.trim();
+    renderRows();
+  });
+
+  // ---------- "Return to top" floating button ----------
+  (function () {
+    const btn = document.getElementById("back-to-top");
+    const SHOW_AFTER_PX = 400;
+    window.addEventListener("scroll", () => {
+      btn.hidden = window.scrollY < SHOW_AFTER_PX;
+    }, { passive: true });
+    btn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  })();
+
+  // ---------- dropzone / file picker wiring ----------
+  const dz = document.getElementById("dropzone");
+  const fileInput = document.getElementById("file-input");
+
+  document.getElementById("dz-browse").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
+
+  ["dragenter", "dragover"].forEach(evt =>
+    dz.addEventListener(evt, (e) => { e.preventDefault(); dz.classList.add("drag-over"); })
+  );
+  ["dragleave", "drop"].forEach(evt =>
+    dz.addEventListener(evt, (e) => { e.preventDefault(); dz.classList.remove("drag-over"); })
+  );
+  dz.addEventListener("drop", (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    handleFile(file);
+  });
+
+  // ---------- tab switching ----------
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // ---------- time analysis: dropzone / file picker wiring ----------
+  const taDz = document.getElementById("ta-dropzone");
+  const taFileInput = document.getElementById("ta-file-input");
+
+  document.getElementById("ta-dz-browse").addEventListener("click", () => taFileInput.click());
+  taFileInput.addEventListener("change", (e) => taHandleFile(e.target.files[0]));
+
+  ["dragenter", "dragover"].forEach(evt =>
+    taDz.addEventListener(evt, (e) => { e.preventDefault(); taDz.classList.add("drag-over"); })
+  );
+  ["dragleave", "drop"].forEach(evt =>
+    taDz.addEventListener(evt, (e) => { e.preventDefault(); taDz.classList.remove("drag-over"); })
+  );
+  taDz.addEventListener("drop", (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    taHandleFile(file);
+  });
+
+  // ---------- time analysis: multi-select filters (User / Project) ----------
+  ["user", "project"].forEach(kind => {
+    const btn = document.getElementById(`ms-btn-${kind}`);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isHidden = document.getElementById(`ms-popover-${kind}`).hidden;
+      msCloseAll();
+      if (isHidden) msTogglePopover(kind);
+    });
+  });
+  document.querySelectorAll(".ms-popover-actions button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const kind = btn.dataset.ms;
+      const action = btn.dataset.action;
+      const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+      // Scoped to whatever the search box currently shows, so "Select all"
+      // after searching "SAP" only selects the SAP projects, not all 62 —
+      // and "Clear" while searched only clears matches, leaving selections
+      // outside the current search untouched.
+      const visible = msVisibleOptions(kind);
+      if (action === "all") {
+        visible.forEach(o => selectedSet.add(o));
+      } else {
+        visible.forEach(o => selectedSet.delete(o));
+      }
+      msRenderOptions(kind);
+      msUpdateButtonLabel(kind);
+      taRenderRows();
+    });
+  });
+
+  // ---------- time analysis: multi-select search boxes ----------
+  ["user", "project"].forEach(kind => {
+    const searchInput = document.getElementById(`ms-search-${kind}`);
+    searchInput.addEventListener("input", (e) => {
+      msState[kind].searchTerm = e.target.value;
+      msRenderOptions(kind);
+    });
+    // Don't let typing (e.g. spacebar) or a click inside the search box
+    // bubble up to the document-level "click outside closes popovers"
+    // handler or trigger any option's keyboard shortcuts.
+    searchInput.addEventListener("click", (e) => e.stopPropagation());
+  });
+
+  // "My Team" — one click selects exactly the team's users in the User
+  // filter (replacing whatever was selected before), leaving every other
+  // filter untouched.
+  document.getElementById("ta-my-team").addEventListener("click", () => {
+    const teamNames = taTeamUserNames();
+    taFilterUsers.clear();
+    teamNames.forEach(n => taFilterUsers.add(n));
+    msRenderOptions("user");
+    msUpdateButtonLabel("user");
+    taRenderRows();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".ms-wrap")) msCloseAll();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") msCloseAll();
+  });
+
+  // ---------- time analysis: date range presets ----------
+  // Format as YYYY-MM-DD using the date's own local year/month/day — NOT
+  // toISOString(), which converts to UTC first and can shift the date by
+  // one day in timezones ahead of UTC (e.g. midnight local -> previous
+  // day in UTC), which is what caused "this month" to start a day early.
+  function isoDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  function startOfWeek(d) {
+    // Sunday-start week (Sun through Sat).
+    const day = d.getDay(); // 0 = Sunday
+    const sunday = new Date(d);
+    sunday.setDate(d.getDate() - day);
+    return sunday;
+  }
+  // Computes and applies a date preset's From/To — shared by the preset
+  // dropdown's change handler and the initial-default-filters logic below,
+  // so "this week" means the same thing in both places.
+  function taApplyDatePreset(preset) {
+    if (!preset) return false;
+    const now = new Date();
+    let from, to;
+    if (preset === "this-week") {
+      from = startOfWeek(now);
+      to = new Date(from); to.setDate(from.getDate() + 6);
+    } else if (preset === "last-week") {
+      const thisWeekStart = startOfWeek(now);
+      from = new Date(thisWeekStart); from.setDate(thisWeekStart.getDate() - 7);
+      to = new Date(from); to.setDate(from.getDate() + 6);
+    } else if (preset === "this-month") {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (preset === "last-month") {
+      from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      to = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else {
+      return false;
+    }
+    taFilterFrom = isoDate(from);
+    taFilterTo = isoDate(to);
+    document.getElementById("ta-filter-from").value = taFilterFrom;
+    document.getElementById("ta-filter-to").value = taFilterTo;
+    document.getElementById("ta-filter-preset").value = preset;
+    return true;
+  }
+
+  document.getElementById("ta-filter-preset").addEventListener("change", (e) => {
+    if (taApplyDatePreset(e.target.value)) taRenderRows();
+  });
+
+  // Manually editing From/To switches the preset dropdown back to "Custom"
+  // so it doesn't keep showing a label that no longer matches the dates.
+  document.getElementById("ta-filter-from").addEventListener("change", (e) => {
+    taFilterFrom = e.target.value;
+    document.getElementById("ta-filter-preset").value = "";
+    taRenderRows();
+  });
+  document.getElementById("ta-filter-to").addEventListener("change", (e) => {
+    taFilterTo = e.target.value;
+    document.getElementById("ta-filter-preset").value = "";
+    taRenderRows();
+  });
+  document.getElementById("ta-clear-filters").addEventListener("click", () => {
+    taFilterUsers.clear();
+    taFilterProjects.clear();
+    taFilterFrom = ""; taFilterTo = "";
+    msRenderOptions("user"); msUpdateButtonLabel("user");
+    msRenderOptions("project"); msUpdateButtonLabel("project");
+    document.getElementById("ta-filter-from").value = "";
+    document.getElementById("ta-filter-to").value = "";
+    document.getElementById("ta-filter-preset").value = "";
+    taRenderRows();
+  });
+
+  // ---------- time analysis: column sorting ----------
+  document.querySelectorAll("#tab-time thead th[data-key]").forEach(th => {
+    th.tabIndex = 0;
+    const activate = () => {
+      const key = th.dataset.key;
+      if (taSortKey === key) {
+        taSortDir *= -1;
+      } else {
+        taSortKey = key;
+        taSortDir = th.dataset.type === "num" ? -1 : 1;
+      }
+      taRenderRows();
+    };
+    th.addEventListener("click", activate);
+    th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } });
+  });
+
+  // Applies the page's default Time Analysis view — My Team (if team data
+  // is available) + This week — once, on first load only. The user asked
+  // for this as a starting point they'll adjust from manually, so it's
+  // intentionally applied only here, not every time a new CSV is dropped
+  // (that would fight with filters the user already set for themselves).
+  function taApplyDefaultFilters() {
+    const teamNames = taTeamUserNames();
+    if (teamNames.length) {
+      taFilterUsers.clear();
+      teamNames.forEach(n => taFilterUsers.add(n));
+      msRenderOptions("user");
+      msUpdateButtonLabel("user");
+    }
+    taApplyDatePreset("this-week");
+  }
+
+  // ---------- time analysis: initial render ----------
+  const taStored = DROP_AND_CACHE_ENABLED ? taLoadFromStorage() : null;
+  if (taStored && Array.isArray(taStored.rows) && taStored.rows.length) {
+    TA_DATA = taStored.rows;
+    const savedWhen = taStored.savedAt ? new Date(taStored.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    taSetLoadNote(`Showing time entries loaded ${savedWhen ? "on " + savedWhen : "earlier"} in this browser — drop a new CSV to refresh.`, "");
+    taPopulateFilterOptions();
+    taApplyDefaultFilters();
+  } else if (TA_SNAPSHOT_DATA.length) {
+    taPopulateFilterOptions();
+    taApplyDefaultFilters();
+    taSetLoadNote(`Showing the timespent snapshot from ${SNAPSHOT_DATE} embedded in this page.`, "");
+  } else {
+    taSetLoadNote(`No time entry data in this page.`, "");
+  }
+  if (DEFAULT_MANAGER_ID && MANAGER_MAP.has(String(DEFAULT_MANAGER_ID))) {
+    applyTaManagerFilter(String(DEFAULT_MANAGER_ID));
+  } else {
+    taRenderRows();
+  }
+
+  // ---------- initial render ----------
+  const stored = DROP_AND_CACHE_ENABLED ? loadFromStorage() : null;
+  if (stored && Array.isArray(stored.rows) && stored.rows.length) {
+    DATA = stored.rows;
+    REPORT_DATE = stored.dateStr || SNAPSHOT_DATE;
+    const savedWhen = stored.savedAt ? new Date(stored.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    setLoadNote(`Showing data loaded ${savedWhen ? "on " + savedWhen : "earlier"} in this browser — drop a new CSV to refresh.`, "");
+  } else {
+    setLoadNote(`Showing the snapshot from ${SNAPSHOT_DATE} embedded in this page.`, "");
+  }
+
+  renderStats(DATA);
+  renderRows();
+</script>

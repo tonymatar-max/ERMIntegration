@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Utilization Report &mdash; ERM{% endblock %}
+{% block content %}
+<style>
+  #ur-scope { max-width: 1400px; margin: 0 auto; padding: 0 1rem 2rem; }
+  #ur-scope table.ur-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  #ur-scope table.ur-table th, #ur-scope table.ur-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef1f4; text-align: right; white-space: nowrap; }
+  #ur-scope table.ur-table th:first-child, #ur-scope table.ur-table td:first-child,
+  #ur-scope table.ur-table th:nth-child(2), #ur-scope table.ur-table td:nth-child(2) { text-align: left; white-space: normal; }
+  #ur-scope table.ur-table thead th { background: #f4f6f8; font-weight: 600; }
+  #ur-scope .ur-util-ok { color: #1a7f37; }
+  #ur-scope .ur-util-warn { color: #b8792e; }
+  #ur-scope .ur-util-over { color: #a4262c; font-weight: 600; }
+  #ur-scope .ur-hint { color: #6c757d; font-size: 0.85rem; }
+  #ur-scope .ur-toolbar { display: flex; gap: 1rem; align-items: end; margin: 1rem 0; flex-wrap: wrap; }
+  #ur-scope .ur-field label { display: block; font-size: 0.75rem; color: #6c757d; margin-bottom: 0.2rem; }
+  #ur-scope .ur-btn { background:#152452; color:#fff; border:none; border-radius:4px; padding:0.5rem 1rem; font-size:0.85rem; cursor:pointer; }
+  #ur-scope .ur-btn:disabled { opacity:0.6; cursor:default; }
+</style>
+<div id="ur-scope">
+  <h1>Utilization Report</h1>
+  <p class="ur-hint">
+    Actual hours logged per consultant/project across a range of past months, against a flat capacity of 8 hours &times;
+    weekdays per month (no holiday calendar) &mdash; the historical counterpart to
+    <a href="/resource-planning">Resource Planning</a>'s forward-looking plan.
+    {% if fetched_on %}Based on the Redmine data cached as of <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on }}"></span>.{% endif %}
+  </p>
+
+  <div class="ur-toolbar">
+    <div class="ur-field">
+      <label for="ur-from">From</label>
+      <input type="month" id="ur-from" value="{{ from_month }}">
+    </div>
+    <div class="ur-field">
+      <label for="ur-to">To</label>
+      <input type="month" id="ur-to" value="{{ to_month }}">
+    </div>
+    <button class="ur-btn" id="ur-export-btn" type="button" data-from="{{ from_month }}" data-to="{{ to_month }}">Export to Excel</button>
+    <span class="ur-hint" id="ur-export-progress" hidden>Generating&hellip;</span>
+  </div>
+
+  <h1 style="margin-top:1rem;">Utilization by consultant</h1>
+  <div style="overflow-x:auto;">
+    <table class="ur-table">
+      <thead>
+        <tr>
+          <th>Consultant</th>
+          {% for label in month_labels %}<th>{{ label }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in summary %}
+        <tr>
+          <td>{{ entry.userName }}</td>
+          {% for month in months %}
+          <td>
+            {{ "%.0f"|format(entry.monthly[month]) }} / {{ "%.0f"|format(entry.capacity[month]) }}h
+            (<span class="{{ 'ur-util-over' if entry.utilization[month] > 1 else ('ur-util-warn' if entry.utilization[month] > 0.85 else 'ur-util-ok') }}">{{ "%.0f"|format(entry.utilization[month] * 100) }}%</span>)
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ months|length + 1 }}">No time logged in this range.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h1 style="margin-top:2rem;">Actual hours by project</h1>
+  <div class="ur-toolbar">
+    <div class="ur-field">
+      <label for="ur-search">Search</label>
+      <input type="text" id="ur-search" placeholder="Filter by consultant or project&hellip;">
+    </div>
+  </div>
+  <p class="ur-hint" id="ur-count-hint"></p>
+  <div style="overflow-x:auto;">
+    <table class="ur-table">
+      <thead>
+        <tr>
+          <th>Consultant</th>
+          <th>Project</th>
+          <th>Country</th>
+          {% for label in month_labels %}<th>{{ label }}</th>{% endfor %}
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody id="ur-detail-tbody">
+        {% for r in rows %}
+        <tr data-search="{{ (r.userName ~ ' ' ~ r.projectName)|lower }}">
+          <td>{{ r.userName }}</td>
+          <td>{{ r.projectName }}{% if r.rapportCode %}<br><span class="ur-hint">{{ r.rapportCode }}</span>{% endif %}</td>
+          <td>{{ r.country or '' }}</td>
+          {% for month in months %}
+          <td>{{ "%.1f"|format(r.monthly.get(month, 0.0)) }}</td>
+          {% endfor %}
+          <td>{{ "%.1f"|format(r.hours) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ months|length + 4 }}">No time logged in this range.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function() {
+  const fromInput = document.getElementById('ur-from');
+  const toInput = document.getElementById('ur-to');
+  const navigate = () => {
+    window.location.href = `/utilization-report?from_month=${fromInput.value}&to_month=${toInput.value}`;
+  };
+  fromInput.addEventListener('change', navigate);
+  toInput.addEventListener('change', navigate);
+
+  const search = document.getElementById('ur-search');
+  const detailTbody = document.getElementById('ur-detail-tbody');
+  const countHint = document.getElementById('ur-count-hint');
+  if (detailTbody) {
+    const detailRows = Array.from(detailTbody.querySelectorAll('tr[data-search]'));
+    const applyFilter = () => {
+      const term = (search.value || '').trim().toLowerCase();
+      let visible = 0;
+      detailRows.forEach(row => {
+        const show = !term || row.dataset.search.includes(term);
+        row.hidden = !show;
+        if (show) visible++;
+      });
+      if (countHint) countHint.textContent = `Showing ${visible} of ${detailRows.length} entries`;
+    };
+    search.addEventListener('input', applyFilter);
+    applyFilter();
+  }
+
+  const exportBtn = document.getElementById('ur-export-btn');
+  const exportProgress = document.getElementById('ur-export-progress');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      if (exportProgress) exportProgress.hidden = false;
+      try {
+        const resp = await fetch(`/utilization-report/export?from_month=${exportBtn.dataset.from}&to_month=${exportBtn.dataset.to}`);
+        if (!resp.ok) throw new Error(`Export failed (HTTP ${resp.status}).`);
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = /filename="([^"]+)"/.exec(disposition);
+        const filename = match ? match[1] : 'Utilization Report.xlsx';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert(e.message || 'Export failed.');
+      } finally {
+        exportBtn.disabled = false;
+        if (exportProgress) exportProgress.hidden = true;
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

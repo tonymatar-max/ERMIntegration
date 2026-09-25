@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Settings &mdash; ERM{% endblock %}
+{% block content %}
+<div class="wrap wide">
+  <h1>Your preferences</h1>
+  <p class="hint">The Redmine connection itself is shared for everyone now — see <a href="/app-settings">App Settings</a>. These are just your own display preferences.</p>
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+  <form method="post" action="/settings">
+    <label>My Team</label>
+    <input type="text" name="my_team_ids" value="{{ prefs.my_team_ids }}" placeholder="e.g. 3252,1048,2077">
+    <p class="hint">Comma-separated Redmine user ids. Powers the "My Team" quick filter on the Time Analysis tab.</p>
+
+    {% if prefs.manager_id %}
+    <label>Project Manager</label>
+    <p class="hint" style="margin-top:0;">You're restricted to Project Manager id <strong>{{ prefs.manager_id }}</strong>'s projects — set by an admin, not editable here.</p>
+    {% endif %}
+
+    <button type="submit">Save settings</button>
+  </form>
+</div>
+{% endblock %}
