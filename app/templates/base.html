@@ -4,31 +4,51 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}ERM{% endblock %}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
 <style>
-  /* Seidor brand palette — navy/blue, matched from seidor.com (header text
-     #07153A, primary buttons #263C7A, accent highlight #66B6FF), Poppins
-     for type. Kept in sync with dashboard_template.html/pp_report.html's
-     own token blocks (those pages are styled separately). */
+  /* Seidor brand palette — web identity matched from seidor.com: white header
+     with the SEIDOR wordmark (blue sphere as the "O"), navy ink (#07153A),
+     indigo primary buttons (#2F2F8C, the live site's button colour) and a
+     bright blue/cyan accent (#66B6FF / #00BFFF) reserved for links and data.
+     Poppins throughout. Kept in sync with dashboard_template.html /
+     pp_report.html's own token blocks (those pages are styled separately). */
   :root {
     color-scheme: light;
     --seidor-navy: #07153a;
-    --seidor-blue: #263c7a;
-    --seidor-blue-dark: #1a2c5c;
+    --seidor-blue: #2f2f8c;        /* primary buttons (seidor.com) */
+    --seidor-blue-dark: #26266f;
     --seidor-accent: #66b6ff;
+    --seidor-cyan: #00bfff;
     --seidor-bg: #f5f7fb;
-    --seidor-border: #dfe4ee;
+    --seidor-border: #e2e7f1;
     --seidor-ink-soft: #5b6478;
   }
   body { font-family: "Poppins", -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--seidor-bg); margin:0; color:var(--seidor-navy); }
-  .topbar { background:var(--seidor-navy); color:#fff; padding:0.75rem 1.5rem; display:flex; justify-content:space-between; align-items:center; }
-  .topbar a { color:#fff; text-decoration:none; margin-left:1rem; font-size:0.9rem; opacity:0.85; }
-  .topbar a:hover { opacity:1; text-decoration:underline; }
+
+  /* SEIDOR wordmark — the blue sphere is the "O" */
+  .seidor-logo { display:inline-flex; align-items:center; font-weight:700; letter-spacing:0.14em;
+    font-size:1.15rem; line-height:1; color:var(--seidor-navy); user-select:none; }
+  .seidor-logo .o { position:relative; display:inline-block; width:1.02em; height:1.02em; margin:0 0.015em;
+    border-radius:50%; vertical-align:middle;
+    background:radial-gradient(circle at 34% 30%, #dff0ff 0%, #8fd0ff 22%, var(--seidor-accent) 46%, #1f6fe0 70%, #0c3fa6 100%);
+    box-shadow:0 0 0.5em rgba(101,182,255,0.5), inset 0 0 0.18em rgba(255,255,255,0.6); }
+
+  /* White top header (like seidor.com) */
+  .topbar { background:#fff; color:var(--seidor-navy); padding:0.85rem 1.5rem; display:flex;
+    justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;
+    border-bottom:1px solid var(--seidor-border); position:sticky; top:0; z-index:30; }
+  .topbar .topnav { display:flex; align-items:center; flex-wrap:wrap; gap:0.15rem; }
+  .topbar a { color:var(--seidor-ink-soft); text-decoration:none; margin-left:0.1rem; font-size:0.85rem;
+    font-weight:500; padding:0.4rem 0.6rem; border-radius:0.4rem; white-space:nowrap; }
+  .topbar a:hover { color:var(--seidor-navy); background:var(--seidor-bg); }
+  .topbar a.logout { color:var(--seidor-blue); font-weight:600; }
+  .topbar > span, .topbar .topnav > span { color:var(--seidor-ink-soft); font-size:0.8rem; padding:0 0.4rem; }
   .wrap { max-width:520px; margin:3rem auto; background:#fff; border:1px solid var(--seidor-border); border-radius:0.75rem; padding:2rem; box-shadow:0 1px 3px rgba(7,21,58,0.06); }
   .wrap.wide { max-width:640px; }
   h1 { font-size:1.3rem; margin-top:0; font-weight:600; color:var(--seidor-navy); }
   label { display:block; font-size:0.85rem; font-weight:600; margin:0.9rem 0 0.3rem; }
   input, select { width:100%; padding:0.55rem 0.7rem; border:1px solid var(--seidor-border); border-radius:0.4rem; font-size:0.95rem; box-sizing:border-box; font-family:inherit; }
+  input:focus, select:focus { outline:none; border-color:var(--seidor-accent); box-shadow:0 0 0 3px rgba(101,182,255,0.22); }
   button, .btn { margin-top:1.3rem; padding:0.6rem 1.2rem; background:var(--seidor-blue); color:#fff; border:none; border-radius:0.4rem; font-size:0.95rem; cursor:pointer; text-decoration:none; display:inline-block; font-family:inherit; }
   button:hover, .btn:hover { background:var(--seidor-blue-dark); }
   button.secondary, .btn.secondary { background:#eef1f4; color:var(--seidor-navy); }
@@ -43,8 +63,8 @@
 </head>
 <body>
 <div class="topbar">
-  <strong>Seidor &mdash; Project Ledger</strong>
-  <div>
+  <span class="seidor-logo" aria-label="SEIDOR Project Ledger">SEID<span class="o" aria-hidden="true"></span>R</span>
+  <div class="topnav">
     {% if user %}
       <span>{{ user.username }}{% if user.is_admin %} (admin){% endif %}</span>
       <a href="/dashboard">Dashboard</a>
