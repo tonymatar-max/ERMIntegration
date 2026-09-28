@@ -120,6 +120,34 @@ def save_pp_report_excluded_project_ids(normalized_csv: str):
         )
 
 
+def get_ksa_excluded_codes_raw() -> str:
+    """Raw comma-separated KSA timesheet codes to treat as non-project time
+    (leave, support, sales, …) — for redisplaying in the admin textbox."""
+    with db.get_db() as conn:
+        row = conn.execute("SELECT ksa_excluded_codes FROM app_settings WHERE id = 1").fetchone()
+        return row["ksa_excluded_codes"] if row and row["ksa_excluded_codes"] else ""
+
+
+def get_ksa_excluded_codes() -> set:
+    """Set of KSA timesheet project codes (upper-cased) to exclude from Time
+    Analysis — leave/support/sales etc. Parsed from the saved text."""
+    raw = get_ksa_excluded_codes_raw()
+    return {part.strip().upper() for part in raw.split(",") if part.strip()}
+
+
+def save_ksa_excluded_codes(normalized_csv: str):
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, ksa_excluded_codes, updated_on)
+            VALUES (1, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                ksa_excluded_codes = excluded.ksa_excluded_codes, updated_on = datetime('now')
+            """,
+            (normalized_csv,),
+        )
+
+
 def get_pp_report_excluded_manager_ids_raw() -> str:
     """The raw comma-separated text as last saved (for redisplaying in the
     admin textbox) — use get_pp_report_excluded_manager_ids() instead for

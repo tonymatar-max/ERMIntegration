@@ -168,6 +168,12 @@ def _migrate(conn):
     if not _column_exists(conn, "app_settings", "pp_report_excluded_manager_ids"):
         conn.execute("ALTER TABLE app_settings ADD COLUMN pp_report_excluded_manager_ids TEXT NOT NULL DEFAULT ''")
 
+    # KSA timesheet project codes to treat as non-project time (leave, support,
+    # sales, etc.) — excluded from Time Analysis. Comma-separated codes. See
+    # settings_store.get/save_ksa_excluded_codes.
+    if not _column_exists(conn, "app_settings", "ksa_excluded_codes"):
+        conn.execute("ALTER TABLE app_settings ADD COLUMN ksa_excluded_codes TEXT NOT NULL DEFAULT ''")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a

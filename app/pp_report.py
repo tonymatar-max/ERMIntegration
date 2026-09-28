@@ -786,6 +786,48 @@ def ksa_timesheet_entries(roster: list) -> list:
     return entries
 
 
+def ksa_timesheet_entries_all(roster: list, excluded_codes=None) -> list:
+    """Like ksa_timesheet_entries, but includes EVERY stored KSA time entry so
+    the Time Analysis tab can show all logged hours. Rows whose code matches an
+    uploaded KSA project become that project (project_id = -excel id); unmatched
+    codes (leave, support, sales, …) become a synthetic project named after the
+    code so they're still visible and groupable. Codes in `excluded_codes`
+    (case-insensitive) are dropped entirely — that's the admin's Time Analysis
+    exclusion list (Settings → PP Report Data)."""
+    import zlib
+    excluded = {str(c).strip().upper() for c in (excluded_codes or set()) if str(c).strip()}
+    with db.get_db() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM ksa_timesheet ORDER BY spent_on").fetchall()]
+        if not rows:
+            return []
+        codes = {}
+        for r in conn.execute("SELECT project_code, excel_project_id, name FROM ksa_import ORDER BY month ASC").fetchall():
+            if r["project_code"]:
+                codes[r["project_code"]] = (r["excel_project_id"], r["name"])
+    people = _resolve_ksa_user_ids(sorted({r["user_name"] for r in rows}), roster)
+    entries = []
+    for r in rows:
+        code = (r["project_code"] or "").strip()
+        if code.upper() in excluded:
+            continue
+        matched = codes.get(code)
+        if matched is not None:
+            project_id, project_name = -matched[0], matched[1]
+        else:
+            # Stable synthetic id for an unmatched code (crc32 is deterministic
+            # across runs, unlike hash()); far below real -excel ids so it
+            # can't collide with a matched KSA project.
+            project_id = -(9000000 + (zlib.crc32(code.encode("utf-8")) % 1000000))
+            project_name = code or "(no code)"
+        user_id, user_name = people[r["user_name"]]
+        entries.append({
+            "id": None, "project_id": project_id, "project_name": project_name, "issue_id": None,
+            "user_id": user_id, "user_name": user_name, "activity_name": None,
+            "hours": r["hours"], "spent_on": r["spent_on"], "comments": r["description"],
+        })
+    return entries
+
+
 def ksa_timesheet_skipped(month: str) -> list:
     """(project_code, hours) for this month's stored entries that are NOT
     KSA project time (leave, support, sales, other countries' projects)."""

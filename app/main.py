@@ -66,6 +66,7 @@ class templates:
             context.setdefault("ksa_months", pp_report.list_ksa_months())
             context.setdefault("ksa_timesheet_months", pp_report.list_ksa_timesheet_months())
             context.setdefault("default_ksa_month", pp_report.next_month_to_lock())
+            context.setdefault("ksa_excluded_codes", settings_store.get_ksa_excluded_codes_raw())
         html = _jinja_env.get_template(name).render(**context)
         return HTMLResponse(html, status_code=status_code)
 
@@ -933,6 +934,35 @@ def pp_report_excluded_managers_save(request: Request, manager_ids: str = Form("
     )
 
 
+@app.post("/admin/pp-report-months/ksa-excluded-codes", response_class=HTMLResponse)
+def ksa_excluded_codes_save(request: Request, codes: str = Form("")):
+    """Admin-configured comma-separated KSA timesheet project codes to treat as
+    non-project time (leave, support, sales, …). Their hours are excluded from
+    the Time Analysis tab. Codes are free-form text (e.g. 123, PSASUPPORT), so
+    unlike the id-based lists above every entry is accepted as-is."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+
+    parts = [p.strip() for p in codes.split(",") if p.strip()]
+    normalized = ", ".join(parts)
+    settings_store.save_ksa_excluded_codes(normalized)
+    logger.info("KSA excluded timesheet codes saved by %r: %s", user["username"], normalized or "(none)")
+
+    ok = f"Saved — {len(parts)} KSA code(s) excluded from Time Analysis." if parts else "Saved — no KSA codes excluded."
+    return templates.TemplateResponse(
+        "pp_report_months.html",
+        {
+            "request": request, "user": user, "months": pp_report.list_report_months(),
+            "excluded_project_ids": settings_store.get_pp_report_excluded_project_ids_raw(),
+            "excluded_manager_ids": settings_store.get_pp_report_excluded_manager_ids_raw(),
+            "error": None, "ok": ok,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
@@ -985,7 +1015,12 @@ def dashboard(request: Request):
             # up in the Time Analysis tab alongside the Redmine time entries;
             # their projects are listed (with the KSA manager) so that tab's
             # Project Manager filter can select them.
-            ksa_entries = pp_report.ksa_timesheet_entries(settings_store.distinct_timesheet_users(timespent))
+            # Time Analysis shows ALL logged KSA hours (leave/support included),
+            # minus any codes the admin excludes under Settings → PP Report Data.
+            ksa_entries = pp_report.ksa_timesheet_entries_all(
+                settings_store.distinct_timesheet_users(timespent),
+                settings_store.get_ksa_excluded_codes(),
+            )
             timespent = timespent + ksa_entries
             ksa_ta_projects = [
                 {"name": name, "managerId": pp_report.KSA_MANAGER_KEY, "managerName": pp_report.KSA_MANAGER_NAME}
