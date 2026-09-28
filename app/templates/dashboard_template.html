@@ -1,5 +1,8 @@
 <title>Project Ledger</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!-- SheetJS for the Time Analysis "Export to Excel" button (true .xlsx).
+     Falls back to a CSV download if this CDN script can't load. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   /* Seidor brand palette — navy/blue, matched from seidor.com (header text
      #07153A, primary buttons #263C7A, accent highlight #66B6FF), Poppins
@@ -720,6 +723,23 @@
     align-self: flex-end;
     margin-bottom: 9px;
   }
+  .ta-export {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), #1f4fb0);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    padding: 8px 14px;
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 4px 12px -4px var(--accent-soft), 0 1px 2px rgba(7,21,58,0.12);
+  }
+  .ta-export:hover { filter: brightness(1.05); }
+  .ta-export:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* ---------- time analysis: multi-select popover ---------- */
   .ms-wrap { position: relative; }
@@ -1131,6 +1151,9 @@
       <input id="ta-filter-to" type="date">
     </label>
     <button class="ta-clear" id="ta-clear-filters" type="button">Clear filters</button>
+    <button class="ta-export" id="ta-export-excel" type="button">
+      <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5"/><path d="M4 14v2h12v-2"/></svg>Export to Excel
+    </button>
   </div>
 
   <div class="ta-filters-row2">
@@ -1154,6 +1177,7 @@
         <option value="manager">Project manager</option>
         <option value="consultant">Consultant</option>
         <option value="country">Country</option>
+        <option value="none">No grouping</option>
       </select>
     </label>
   </div>
@@ -1195,6 +1219,7 @@
       <thead>
         <tr>
           <th data-key="spent_on" data-type="str">Date</th>
+          <th data-key="project_name" data-type="str">Project</th>
           <th data-key="user_name" data-type="str">User</th>
           <th data-key="issue_id" data-type="num">Issue</th>
           <th data-key="activity_name" data-type="str">Activity</th>
@@ -1616,6 +1641,13 @@
 
   const TA_GROUP_LABELS = { project: "Project", manager: "Project manager", consultant: "Consultant", country: "Country" };
 
+  // Rapport (project) code for a time entry, looked up from the Projects
+  // tab data by project name — the time entries don't carry it themselves.
+  function taRapportCode(projectName) {
+    const p = DATA.find(d => d.name === projectName);
+    return (p && p.rapportCode) || "";
+  }
+
   function taMatchesFilters(r) {
     if (taFilterUsers.size && !taFilterUsers.has(r.user_name)) return false;
     if (taFilterProjects.size && !taFilterProjects.has(r.project_name)) return false;
@@ -1649,9 +1681,28 @@
     };
 
     const tbody = document.getElementById("ta-tbody");
+    // Each detail row now shows the project (name + Rapport code), so entries
+    // stay identifiable under any grouping — and when grouping is off.
+    const entryRow = (e) => {
+      const code = taRapportCode(e.project_name);
+      return `
+            <tr>
+              <td class="mono">${escapeHtml(e.spent_on || "—")}</td>
+              <td class="entry-name">${escapeHtml(e.project_name || "—")}${code ? `<div class="rcode-sub">${escapeHtml(code)}</div>` : ""}</td>
+              <td class="entry-name">${escapeHtml(e.user_name || "—")}</td>
+              <td class="mono">${e.issue_id ? "#" + escapeHtml(String(e.issue_id)) : '<span class="empty-dash">—</span>'}</td>
+              <td>${escapeHtml(e.activity_name || "—")}</td>
+              <td class="num">${fmtHours(e.hours)}</td>
+              <td class="comments-cell">${e.comments ? escapeHtml(e.comments) : '<span class="empty-dash">—</span>'}</td>
+            </tr>`;
+    };
 
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="no-results">No time entries match these filters.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="no-results">No time entries match these filters.</td></tr>`;
+    } else if (taGroupBy === "none") {
+      // Flat, ungrouped list — sort all rows by the active column.
+      const flat = sortEntries([...rows]);
+      tbody.innerHTML = flat.map(entryRow).join("");
     } else {
       let html = "";
       sortedGroupKeys.forEach(groupKey => {
@@ -1687,7 +1738,7 @@
 
         html += `
           <tr class="proj-group-row">
-            <td colspan="6">
+            <td colspan="7">
               <div class="proj-group-head">
                 <div class="proj-group-name">${nameHtml}</div>
                 <div class="proj-group-metrics">${metricsHtml}</div>
@@ -1695,17 +1746,7 @@
             </td>
           </tr>`;
 
-        entries.forEach(e => {
-          html += `
-            <tr>
-              <td class="mono">${escapeHtml(e.spent_on || "—")}</td>
-              <td class="entry-name">${escapeHtml(e.user_name || "—")}</td>
-              <td class="mono">${e.issue_id ? "#" + escapeHtml(String(e.issue_id)) : '<span class="empty-dash">—</span>'}</td>
-              <td>${escapeHtml(e.activity_name || "—")}</td>
-              <td class="num">${fmtHours(e.hours)}</td>
-              <td class="comments-cell">${e.comments ? escapeHtml(e.comments) : '<span class="empty-dash">—</span>'}</td>
-            </tr>`;
-        });
+        entries.forEach(e => { html += entryRow(e); });
       });
       tbody.innerHTML = html;
     }
@@ -1715,9 +1756,13 @@
 
     const footerEl = document.getElementById("ta-footer-note");
     if (footerEl) {
-      footerEl.textContent = taGroupBy === "project"
-        ? "Rows are grouped by project; each project's header line shows its overall Est./Spent hours from the Projects tab data (when loaded) for quick context."
-        : `Rows are grouped by ${TA_GROUP_LABELS[taGroupBy].toLowerCase()}; each header line shows the logged hours plus how many projects${taGroupBy === "consultant" ? "" : " and consultants"} roll up into the group. Manager and country come from the Projects tab data.`;
+      if (taGroupBy === "none") {
+        footerEl.textContent = "Ungrouped — every time entry listed individually. Each row shows its project and Rapport code. Use the column headers to sort.";
+      } else if (taGroupBy === "project") {
+        footerEl.textContent = "Rows are grouped by project; each project's header line shows its overall Est./Spent hours from the Projects tab data (when loaded) for quick context.";
+      } else {
+        footerEl.textContent = `Rows are grouped by ${TA_GROUP_LABELS[taGroupBy].toLowerCase()}; each header line shows the logged hours plus how many projects${taGroupBy === "consultant" ? "" : " and consultants"} roll up into the group. Manager and country come from the Projects tab data.`;
+      }
     }
 
     const totalHours = rows.reduce((a, r) => a + r.hours, 0);
@@ -1789,9 +1834,12 @@
     // Second chart follows the current "Group by" selection (project /
     // manager / consultant / country) so it lines up with the table below.
     const byGroup = new Map();
+    // The "No grouping" table view still charts by project — an ungrouped
+    // bar chart would just be one bar per entry, which isn't useful.
+    const chartGroup = taGroupBy === "none" ? "project" : taGroupBy;
     rows.forEach(r => {
       if (r.user_name) byUser.set(r.user_name, (byUser.get(r.user_name) || 0) + r.hours);
-      const gk = taGroupKeyFor(r);
+      const gk = chartGroup === "project" ? (r.project_name || "(no project)") : taGroupKeyFor(r);
       byGroup.set(gk, (byGroup.get(gk) || 0) + r.hours);
     });
 
@@ -1799,7 +1847,7 @@
     const groupData = [...byGroup.entries()].map(([label, hours]) => ({ label, hours }));
 
     const titleEl = document.getElementById("chart-by-project-title");
-    if (titleEl) titleEl.textContent = `Hours logged by ${TA_GROUP_LABELS[taGroupBy].toLowerCase()} (filtered)`;
+    if (titleEl) titleEl.textContent = `Hours logged by ${TA_GROUP_LABELS[chartGroup].toLowerCase()} (filtered)`;
 
     taBuildBarChart("chart-by-user", userData, "user_name");
     taBuildBarChart("chart-by-project", groupData, "label");
@@ -2593,6 +2641,47 @@
     taGroupBy = e.target.value;
     taRenderRows();
   });
+
+  // Export the currently-filtered time entries (flat, ignoring grouping) to
+  // a real .xlsx via SheetJS; falls back to a CSV download if that CDN
+  // script didn't load.
+  function taExportExcel() {
+    const rows = TA_DATA.filter(taMatchesFilters);
+    if (!rows.length) { taSetLoadNote("Nothing to export for the current filters.", "err"); return; }
+    const records = rows.map(e => {
+      const p = DATA.find(d => d.name === e.project_name);
+      return {
+        "Date": e.spent_on || "",
+        "Rapport code": (p && p.rapportCode) || "",
+        "Project": e.project_name || "",
+        "Country": (p && p.country) || "",
+        "Project manager": (p && p.managerName) || "",
+        "Consultant": e.user_name || "",
+        "Issue": e.issue_id ? "#" + e.issue_id : "",
+        "Activity": e.activity_name || "",
+        "Hours": e.hours,
+        "Comments": e.comments || "",
+      };
+    });
+    const fname = `time-analysis-${new Date().toISOString().slice(0, 10)}`;
+    if (typeof XLSX !== "undefined") {
+      const ws = XLSX.utils.json_to_sheet(records);
+      ws["!cols"] = [{ wch: 11 }, { wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 20 }, { wch: 22 }, { wch: 9 }, { wch: 16 }, { wch: 8 }, { wch: 40 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Time Analysis");
+      XLSX.writeFile(wb, fname + ".xlsx");
+    } else {
+      const headers = Object.keys(records[0]);
+      const esc = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+      const csv = "﻿" + [headers.join(","), ...records.map(r => headers.map(h => esc(r[h])).join(","))].join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = fname + ".csv"; a.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+  document.getElementById("ta-export-excel").addEventListener("click", taExportExcel);
   document.getElementById("ta-clear-filters").addEventListener("click", () => {
     taFilterUsers.clear();
     taFilterProjects.clear();
