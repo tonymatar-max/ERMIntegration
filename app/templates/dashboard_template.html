@@ -136,27 +136,43 @@
   /* ---------- summary strip ---------- */
   .stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 14px;
     margin-bottom: 22px;
-    box-shadow: var(--shadow);
   }
   .stat {
     position: relative;
     background: var(--paper-raised);
-    padding: 18px 18px 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 16px 16px 15px;
+    overflow: hidden;
     /* Lets .n's cqw sizing below track this card's own box width — grid
        auto-fit columns can be much narrower than the viewport, so vw-based
        sizing wouldn't track the actual available space. */
     container-type: inline-size;
     min-width: 0;
-    transition: background 140ms ease;
+    transition: box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease;
   }
-  .stat:hover { background: var(--row-hover); }
+  .stat:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: 0 2px 4px rgba(7,21,58,0.06), 0 14px 30px -14px rgba(7,21,58,0.28);
+  }
+  /* circular icon badge, top-right (executive-card style) */
+  .stat-ic {
+    position: absolute;
+    top: 13px; right: 13px;
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .stat.warnnum .stat-ic { background: var(--warn-soft); color: var(--warn); }
+  .stat.stalenum .stat-ic { background: var(--stale-soft); color: var(--stale); }
+  .stat .n, .stat .l { padding-right: 40px; }
   /* Seidor accent rule along the top of every tile; the primary
      (accentnum) tiles get the brighter blue→cyan sweep, the rest a
      quiet neutral, so the money figures read as the headline. */
@@ -613,28 +629,35 @@
     * { transition: none !important; }
   }
 
-  /* ---------- tabs ---------- */
+  /* ---------- tabs (segmented pill control) ---------- */
   .tabs {
-    display: flex;
-    gap: 4px;
+    display: inline-flex;
+    gap: 3px;
     margin-bottom: 20px;
-    border-bottom: 1px solid var(--border);
+    padding: 4px;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 11px;
   }
   .tab-btn {
     font-family: "Poppins", sans-serif;
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 500;
-    padding: 10px 16px;
+    padding: 8px 18px;
     border: none;
     background: none;
-    color: var(--ink-faint);
+    color: var(--ink-soft);
     cursor: pointer;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    transition: color 120ms ease, border-color 120ms ease;
+    border-radius: 8px;
+    transition: color 120ms ease, background 120ms ease, box-shadow 120ms ease;
   }
-  .tab-btn:hover { color: var(--ink-soft); }
-  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--accent); }
+  .tab-btn.active {
+    color: var(--accent-ink);
+    background: linear-gradient(135deg, var(--accent), #1f4fb0);
+    box-shadow: 0 2px 8px -2px var(--accent-soft), 0 1px 2px rgba(7,21,58,0.14);
+  }
+  .tab-btn.active:hover { color: var(--accent-ink); }
   .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
@@ -971,26 +994,32 @@
 
   <div class="stats">
     <div class="stat">
+      <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1.3"/><rect x="11" y="3" width="6" height="6" rx="1.3"/><rect x="3" y="11" width="6" height="6" rx="1.3"/><rect x="11" y="11" width="6" height="6" rx="1.3"/></svg></span>
       <div class="n" id="stat-total">–</div>
       <div class="l">Projects</div>
     </div>
     <div class="stat accentnum">
+      <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 6v8M12.2 7.6c-.5-.9-3.8-1.2-3.8.7 0 1.8 3.6 1 3.6 2.9 0 1.9-3.4 1.6-4 .5"/></svg></span>
       <div class="n" id="stat-order-total">–</div>
       <div class="l">Total order amount</div>
     </div>
     <div class="stat accentnum">
+      <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 6.9-.8"/></svg></span>
       <div class="n" id="stat-order-open">–</div>
       <div class="l">Open amount</div>
     </div>
     <div class="stat warnnum">
+      <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="3.5" width="11" height="13" rx="1.6"/><path d="M8 3.5V2.8h4v.7M7.5 8h5M7.5 11h5M7.5 14h3"/></svg></span>
       <div class="n" id="stat-noreview">–</div>
       <div class="l">No review on file</div>
     </div>
     <div class="stat stalenum">
+      <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l4-4 3 3 6-6"/><path d="M13 6h3v3"/></svg></span>
       <div class="n" id="stat-overspent">–</div>
       <div class="l">Over budget</div>
     </div>
     <div class="stat stalenum">
+      <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l4 4 3-3 6 6"/><path d="M13 14h3v-3"/></svg></span>
       <div class="n" id="stat-negremaining">–</div>
       <div class="l">Negative remaining</div>
     </div>
