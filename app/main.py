@@ -37,11 +37,29 @@ _jinja_env = jinja2.Environment(
 )
 
 
+# Which left-rail nav item to highlight, keyed by the template being
+# rendered. Injected centrally (below) so every page lights up the right
+# icon without each route having to pass it.
+NAV_BY_TEMPLATE = {
+    "dashboard_shell.html": "dashboard",
+    "pp_report.html": "pp-report",
+    "resource_planning.html": "resource",
+    "utilization_report.html": "utilization",
+    "settings.html": "settings",
+    "app_settings.html": "app-settings",
+    "countries.html": "countries",
+    "employees.html": "employees",
+    "pp_report_months.html": "pp-data",
+    "users.html": "users",
+}
+
+
 class templates:
     @staticmethod
     def TemplateResponse(name: str, context: dict, status_code: int = 200):
         context = dict(context)
         context.pop("request", None)
+        context.setdefault("nav_active", NAV_BY_TEMPLATE.get(name))
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
