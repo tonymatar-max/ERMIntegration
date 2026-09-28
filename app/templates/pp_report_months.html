@@ -32,27 +32,27 @@
     <button type="submit">Upload KSA data</button>
   </form>
   {% if ksa_months %}
-  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+  <table class="data-table">
     <thead>
-      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
-        <th style="padding:0.5rem 0.4rem;">Month</th>
-        <th style="padding:0.5rem 0.4rem;">KSA projects</th>
-        <th style="padding:0.5rem 0.4rem;">Amount to Take</th>
-        <th style="padding:0.5rem 0.4rem;">Uploaded (UTC)</th>
-        <th style="padding:0.5rem 0.4rem;"></th>
+      <tr>
+        <th>Month</th>
+        <th>KSA projects</th>
+        <th>Amount to Take</th>
+        <th>Uploaded (UTC)</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
       {% for k in ksa_months %}
-      <tr style="border-bottom:1px solid #eef1f4;">
-        <td style="padding:0.5rem 0.4rem;">{{ k.label }}{% if k.locked %} <span class="hint">(locked)</span>{% endif %}</td>
-        <td style="padding:0.5rem 0.4rem;">{{ k.count }}</td>
-        <td style="padding:0.5rem 0.4rem;">{{ "{:,.0f}".format(k.amount_to_take) }}</td>
-        <td style="padding:0.5rem 0.4rem;">{{ k.updated_on }}</td>
-        <td style="padding:0.5rem 0.4rem;">
+      <tr>
+        <td>{{ k.label }}{% if k.locked %} <span class="hint">(locked)</span>{% endif %}</td>
+        <td>{{ k.count }}</td>
+        <td>{{ "{:,.0f}".format(k.amount_to_take) }}</td>
+        <td>{{ k.updated_on }}</td>
+        <td>
           <form method="post" action="/admin/pp-report-months/ksa-delete" style="margin:0;" onsubmit="return confirm('Remove the KSA data loaded for {{ k.label }}?');">
             <input type="hidden" name="month" value="{{ k.month }}">
-            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem; color:#a4262c;">Remove</button>
+            <button type="submit" class="danger btn-sm">Remove</button>
           </form>
         </td>
       </tr>
@@ -71,27 +71,27 @@
     <button type="submit">Upload KSA timesheet</button>
   </form>
   {% if ksa_timesheet_months %}
-  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+  <table class="data-table">
     <thead>
-      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
-        <th style="padding:0.5rem 0.4rem;">Month</th>
-        <th style="padding:0.5rem 0.4rem;">Entries</th>
-        <th style="padding:0.5rem 0.4rem;">People</th>
-        <th style="padding:0.5rem 0.4rem;">Hours</th>
-        <th style="padding:0.5rem 0.4rem;"></th>
+      <tr>
+        <th>Month</th>
+        <th>Entries</th>
+        <th>People</th>
+        <th>Hours</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
       {% for t in ksa_timesheet_months %}
-      <tr style="border-bottom:1px solid #eef1f4;">
-        <td style="padding:0.5rem 0.4rem;">{{ t.label }}</td>
-        <td style="padding:0.5rem 0.4rem;">{{ t.entries }}</td>
-        <td style="padding:0.5rem 0.4rem;">{{ t.people }}</td>
-        <td style="padding:0.5rem 0.4rem;">{{ "{:,.1f}".format(t.hours) }}</td>
-        <td style="padding:0.5rem 0.4rem;">
+      <tr>
+        <td>{{ t.label }}</td>
+        <td>{{ t.entries }}</td>
+        <td>{{ t.people }}</td>
+        <td>{{ "{:,.1f}".format(t.hours) }}</td>
+        <td>
           <form method="post" action="/admin/pp-report-months/ksa-timesheet-delete" style="margin:0;" onsubmit="return confirm('Remove the KSA timesheet loaded for {{ t.label }}?');">
             <input type="hidden" name="month" value="{{ t.month }}">
-            <button type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem; color:#a4262c;">Remove</button>
+            <button type="submit" class="danger btn-sm">Remove</button>
           </form>
         </td>
       </tr>

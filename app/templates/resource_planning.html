@@ -4,18 +4,20 @@
 <style>
   #rp-scope { max-width: 1400px; margin: 0 auto; padding: 0 1rem 2rem; }
   #rp-scope table.rp-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  #rp-scope table.rp-table th, #rp-scope table.rp-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef1f4; text-align: right; white-space: nowrap; }
+  #rp-scope table.rp-table th, #rp-scope table.rp-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--seidor-border); text-align: right; white-space: nowrap; }
   #rp-scope table.rp-table th:first-child, #rp-scope table.rp-table td:first-child,
   #rp-scope table.rp-table th:nth-child(2), #rp-scope table.rp-table td:nth-child(2) { text-align: left; white-space: normal; }
-  #rp-scope table.rp-table thead th { background: #f4f6f8; font-weight: 600; }
+  #rp-scope table.rp-table thead th { background: var(--seidor-bg); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--seidor-ink-soft); }
+  #rp-scope table.rp-table tbody tr:hover td { background: #f8faff; }
   #rp-scope .rp-hours-input { width: 5.5rem; padding: 0.3rem 0.4rem; font-size: 0.85rem; text-align: right; }
   #rp-scope .rp-util-ok { color: #1a7f37; }
   #rp-scope .rp-util-warn { color: #b8792e; }
   #rp-scope .rp-util-over { color: #a4262c; font-weight: 600; }
-  #rp-scope .rp-hint { color: #6c757d; font-size: 0.85rem; }
+  #rp-scope .rp-hint { color: var(--seidor-ink-soft); font-size: 0.85rem; }
   #rp-scope .rp-toolbar { display: flex; gap: 1rem; align-items: end; margin: 1rem 0; flex-wrap: wrap; }
-  #rp-scope .rp-field label { display: block; font-size: 0.75rem; color: #6c757d; margin-bottom: 0.2rem; }
-  #rp-scope .rp-btn { background:#152452; color:#fff; border:none; border-radius:4px; padding:0.5rem 1rem; font-size:0.85rem; cursor:pointer; }
+  #rp-scope .rp-field label { display: block; font-size: 0.75rem; color: var(--seidor-ink-soft); margin-bottom: 0.2rem; }
+  #rp-scope .rp-btn { background:linear-gradient(135deg, var(--seidor-blue), #1f4fb0); color:#fff; border:none; border-radius:8px; padding:0.55rem 1.1rem; font-size:0.85rem; font-weight:600; cursor:pointer; box-shadow:0 4px 12px -4px var(--seidor-accent-soft, rgba(47,47,140,0.12)); }
+  #rp-scope .rp-btn:hover { filter:brightness(1.05); }
   #rp-scope .rp-btn:disabled { opacity:0.6; cursor:default; }
   #rp-scope .rp-consultant-cell { min-width: 10rem; }
   #rp-scope .rp-split-form { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; }
