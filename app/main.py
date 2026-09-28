@@ -967,7 +967,7 @@ def ksa_excluded_codes_save(request: Request, codes: str = Form("")):
 # Dashboard
 # ---------------------------------------------------------------------------
 
-def _render_dashboard_fragment(projects, timespent, report_date, team_ids, default_manager_id, redmine_base_url, ksa_projects=None, excluded_projects=None, excluded_project_ids=None):
+def _render_dashboard_fragment(projects, timespent, report_date, team_ids, default_manager_id, redmine_base_url, ksa_projects=None, excluded_projects=None, excluded_project_ids=None, ta_project_meta=None):
     with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
         html = f.read()
     html = html.replace("__PROJECT_DATA__", json.dumps(projects))
@@ -981,6 +981,9 @@ def _render_dashboard_fragment(projects, timespent, report_date, team_ids, defau
     # tab can optionally show them via its "Show excluded projects" toggle.
     html = html.replace("__EXCLUDED_PROJECTS__", json.dumps(excluded_projects or []))
     html = html.replace("__EXCLUDED_PROJECT_IDS__", json.dumps([str(i) for i in (excluded_project_ids or [])]))
+    # Extra project meta for Time Analysis only (other-team projects a restricted
+    # PM's consultants logged on) — used for grouping/lookups, not the Projects tab.
+    html = html.replace("__TA_PROJECT_META__", json.dumps(ta_project_meta or []))
     html = html.replace("__REDMINE_BASE_URL__", redmine_base_url)
     return html
 
@@ -997,18 +1000,36 @@ def dashboard(request: Request):
     dashboard_html = ""
     fetched_on = None
     if has_settings:
-        projects, fetched_on = settings_store.load_cache("projects")
-        timespent, _ = settings_store.load_cache("timespent")
+        all_projects, fetched_on = settings_store.load_cache("projects")
+        all_timespent, _ = settings_store.load_cache("timespent")
         # Excluded *managers* stay hard-dropped everywhere. Excluded *projects*
         # are removed from the Projects tab but their time entries are still
         # made available to Time Analysis (toggle there decides visibility).
-        projects = _drop_excluded_managers(projects)
+        all_projects = _drop_excluded_managers(all_projects)
         assigned_manager_id = _assigned_manager_id(user)
-        visible_full = _visible_projects(projects, user)
+        visible_full = _visible_projects(all_projects, user)
         excluded_ids = set(settings_store.get_pp_report_excluded_project_ids())
         projects = [p for p in visible_full if p["id"] not in excluded_ids]
         excluded_projects = [p for p in visible_full if p["id"] in excluded_ids]
-        timespent = _visible_timespent(timespent, {p["id"] for p in visible_full})
+
+        # Time Analysis visibility differs from the Projects tab for a restricted
+        # Project Manager: their consultants frequently log time on OTHER teams'
+        # projects, and the PM needs to see that. So Time Analysis shows every
+        # entry by anyone who works on this PM's projects, across ALL projects —
+        # while the Projects tab (above) stays limited to the PM's own projects.
+        ta_project_meta = []
+        if assigned_manager_id:
+            pm_project_ids = {p["id"] for p in visible_full}
+            team_user_ids = {t.get("user_id") for t in all_timespent
+                             if t.get("project_id") in pm_project_ids and t.get("user_id")}
+            timespent = [t for t in all_timespent if t.get("user_id") in team_user_ids]
+            # Meta for the other-team projects those entries land on, so Time
+            # Analysis grouping (by manager/country) and Rapport code resolve.
+            appearing = {t.get("project_id") for t in timespent}
+            known = {p["id"] for p in visible_full}
+            ta_project_meta = [p for p in all_projects if p["id"] in appearing and p["id"] not in known]
+        else:
+            timespent = _visible_timespent(all_timespent, {p["id"] for p in visible_full})
         ksa_ta_projects = []
         if not assigned_manager_id:
             # KSA consultants' uploaded timesheets (KSA isn't in Redmine) show
@@ -1044,7 +1065,7 @@ def dashboard(request: Request):
         prefs = settings_store.get_user_prefs(user["id"])
         team_ids = [t.strip() for t in prefs["my_team_ids"].split(",") if t.strip()]
         report_date = (fetched_on or "")[:10]
-        dashboard_html = _render_dashboard_fragment(projects, timespent, report_date, team_ids, assigned_manager_id, settings["redmine_url"], ksa_ta_projects, excluded_projects, sorted(excluded_ids))
+        dashboard_html = _render_dashboard_fragment(projects, timespent, report_date, team_ids, assigned_manager_id, settings["redmine_url"], ksa_ta_projects, excluded_projects, sorted(excluded_ids), ta_project_meta)
 
     return templates.TemplateResponse(
         "dashboard_shell.html",

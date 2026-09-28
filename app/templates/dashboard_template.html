@@ -1398,6 +1398,9 @@
   // Their time entries are in TA_DATA but hidden unless the toggle is on.
   const TA_EXCLUDED_PROJECTS = __EXCLUDED_PROJECTS__;
   const TA_EXCLUDED_PROJECT_IDS = new Set((__EXCLUDED_PROJECT_IDS__ || []).map(String));
+  // Meta for other-team projects a restricted PM's consultants logged on (Time
+  // Analysis only) — so grouping by manager/country and Rapport code resolve.
+  const TA_PROJECT_META = __TA_PROJECT_META__;
   let taShowExcluded = false;
   let taSortKey = "spent_on";
   let taSortDir = -1;
@@ -1630,7 +1633,10 @@
   // Project record for a name, from the visible Projects data OR the excluded
   // set (so grouping/lookups still work when excluded projects are shown).
   function taProjRec(projectName) {
-    return DATA.find(d => d.name === projectName) || TA_EXCLUDED_PROJECTS.find(d => d.name === projectName) || null;
+    return DATA.find(d => d.name === projectName)
+      || TA_EXCLUDED_PROJECTS.find(d => d.name === projectName)
+      || TA_PROJECT_META.find(d => d.name === projectName)
+      || null;
   }
 
   function taProjectTotals(projectName) {
