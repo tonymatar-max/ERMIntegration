@@ -21,7 +21,7 @@
   </form>
 
   <h1 style="margin-top:2rem;">Excluded KSA timesheet codes</h1>
-  <p class="hint">KSA timesheet project codes to treat as <strong>non-project time</strong> and hide from the <strong>Time Analysis</strong> tab — leave, support, sales, etc. (e.g. <code>123</code> for Annual Leave, <code>PSASUPPORT</code>, <code>PSASALES</code>). Every other code's hours are shown in Time Analysis, whether or not it matches an uploaded KSA project. Case-insensitive; comma-separated.</p>
+  <p class="hint">KSA timesheet project codes to treat as <strong>non-project time</strong> — leave, support, sales, etc. (e.g. <code>123</code> for Annual Leave, <code>PSASUPPORT</code>, <code>PSASALES</code>). In <strong>Time Analysis</strong> these are hidden by default but revealed by the <strong>&ldquo;Show excluded projects&rdquo;</strong> toggle there. Every other code's hours always show, whether or not it matches an uploaded KSA project. Case-insensitive; comma-separated.</p>
   <form method="post" action="/admin/pp-report-months/ksa-excluded-codes">
     <label>Codes (comma-separated)</label>
     <input type="text" name="codes" value="{{ ksa_excluded_codes }}" placeholder="e.g. 123, PSASUPPORT, PSASALES">

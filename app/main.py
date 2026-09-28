@@ -1015,13 +1015,28 @@ def dashboard(request: Request):
             # up in the Time Analysis tab alongside the Redmine time entries;
             # their projects are listed (with the KSA manager) so that tab's
             # Project Manager filter can select them.
-            # Time Analysis shows ALL logged KSA hours (leave/support included),
-            # minus any codes the admin excludes under Settings → PP Report Data.
+            # Time Analysis shows ALL logged KSA hours (leave/support included).
+            # Codes on the admin "Excluded KSA codes" list are hidden by default
+            # but revealed by the same "Show excluded projects" toggle — so their
+            # synthetic project ids are added to the excluded set (with meta),
+            # exactly like Redmine excluded projects.
             ksa_entries = pp_report.ksa_timesheet_entries_all(
-                settings_store.distinct_timesheet_users(timespent),
-                settings_store.get_ksa_excluded_codes(),
-            )
+                settings_store.distinct_timesheet_users(timespent))
             timespent = timespent + ksa_entries
+            ksa_excluded_codes = settings_store.get_ksa_excluded_codes()
+            if ksa_excluded_codes:
+                seen_ex = {p["id"] for p in excluded_projects}
+                for e in ksa_entries:
+                    if (e.get("project_code") or "").upper() in ksa_excluded_codes:
+                        excluded_ids.add(e["project_id"])
+                        if e["project_id"] not in seen_ex:
+                            seen_ex.add(e["project_id"])
+                            excluded_projects.append({
+                                "id": e["project_id"], "name": e["project_name"],
+                                "country": pp_report.KSA_COUNTRY, "rapportCode": e["project_code"],
+                                "managerId": pp_report.KSA_MANAGER_KEY, "managerName": pp_report.KSA_MANAGER_NAME,
+                                "est": 0, "spent": 0,
+                            })
             ksa_ta_projects = [
                 {"name": name, "managerId": pp_report.KSA_MANAGER_KEY, "managerName": pp_report.KSA_MANAGER_NAME}
                 for name in sorted({e["project_name"] for e in ksa_entries})

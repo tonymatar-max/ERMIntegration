@@ -786,16 +786,22 @@ def ksa_timesheet_entries(roster: list) -> list:
     return entries
 
 
-def ksa_timesheet_entries_all(roster: list, excluded_codes=None) -> list:
+def ksa_synthetic_project_id(code: str) -> int:
+    """Stable synthetic project id for a KSA timesheet code that doesn't match
+    an uploaded KSA project (crc32 is deterministic across runs, unlike hash());
+    far below real -excel ids so it can't collide with a matched KSA project."""
+    import zlib
+    return -(9000000 + (zlib.crc32((code or "").encode("utf-8")) % 1000000))
+
+
+def ksa_timesheet_entries_all(roster: list) -> list:
     """Like ksa_timesheet_entries, but includes EVERY stored KSA time entry so
     the Time Analysis tab can show all logged hours. Rows whose code matches an
     uploaded KSA project become that project (project_id = -excel id); unmatched
     codes (leave, support, sales, …) become a synthetic project named after the
-    code so they're still visible and groupable. Codes in `excluded_codes`
-    (case-insensitive) are dropped entirely — that's the admin's Time Analysis
-    exclusion list (Settings → PP Report Data)."""
-    import zlib
-    excluded = {str(c).strip().upper() for c in (excluded_codes or set()) if str(c).strip()}
+    code so they're still visible and groupable. Each entry carries its
+    project_code so callers can apply the admin's "Excluded KSA codes" list as a
+    show/hide toggle rather than dropping the hours here."""
     with db.get_db() as conn:
         rows = [dict(r) for r in conn.execute("SELECT * FROM ksa_timesheet ORDER BY spent_on").fetchall()]
         if not rows:
@@ -808,22 +814,17 @@ def ksa_timesheet_entries_all(roster: list, excluded_codes=None) -> list:
     entries = []
     for r in rows:
         code = (r["project_code"] or "").strip()
-        if code.upper() in excluded:
-            continue
         matched = codes.get(code)
         if matched is not None:
             project_id, project_name = -matched[0], matched[1]
         else:
-            # Stable synthetic id for an unmatched code (crc32 is deterministic
-            # across runs, unlike hash()); far below real -excel ids so it
-            # can't collide with a matched KSA project.
-            project_id = -(9000000 + (zlib.crc32(code.encode("utf-8")) % 1000000))
-            project_name = code or "(no code)"
+            project_id, project_name = ksa_synthetic_project_id(code), (code or "(no code)")
         user_id, user_name = people[r["user_name"]]
         entries.append({
             "id": None, "project_id": project_id, "project_name": project_name, "issue_id": None,
             "user_id": user_id, "user_name": user_name, "activity_name": None,
             "hours": r["hours"], "spent_on": r["spent_on"], "comments": r["description"],
+            "project_code": code,
         })
     return entries
 
