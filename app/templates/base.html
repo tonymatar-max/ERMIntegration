@@ -95,6 +95,28 @@
   .hint { font-size:0.78rem; color:var(--seidor-ink-soft); margin-top:0.3rem; }
   .row { display:flex; gap:0.75rem; }
   .row > * { flex:1; }
+
+  /* Wider cards for list/admin pages so tables breathe */
+  .wrap.xwide { max-width:1000px; }
+  .wrap h1 + .hint, .wrap > .hint:first-of-type { margin-top:-0.2rem; margin-bottom:0.4rem; }
+
+  /* Shared, branded data table — matches the dashboard panels. Admin list
+     pages use <table class="data-table"> instead of inline-styled tables. */
+  .data-table { width:100%; border-collapse:collapse; margin-top:1.1rem; font-size:0.88rem; }
+  .data-table thead th {
+    text-align:left; font-size:0.68rem; font-weight:600; text-transform:uppercase; letter-spacing:0.07em;
+    color:var(--seidor-ink-soft); padding:0.6rem 0.7rem; background:var(--seidor-bg);
+    border-bottom:1px solid var(--seidor-border); white-space:nowrap;
+  }
+  .data-table thead th:first-child { border-top-left-radius:8px; }
+  .data-table thead th:last-child { border-top-right-radius:8px; }
+  .data-table tbody td { padding:0.6rem 0.7rem; border-bottom:1px solid var(--seidor-border); color:var(--seidor-navy); vertical-align:middle; }
+  .data-table tbody tr:hover td { background:#f8faff; }
+  .data-table .inline-form { display:flex; gap:0.4rem; margin:0; align-items:center; }
+  .data-table input { width:auto; padding:0.35rem 0.5rem; font-size:0.85rem; }
+  .data-table .btn-sm { margin:0; padding:0.35rem 0.7rem; font-size:0.82rem; }
+  .btn.danger, button.danger { background:#fdecea; color:#a4262c; }
+  .btn.danger:hover, button.danger:hover { background:#f8d7d3; }
 </style>
 </head>
 <body>

@@ -12,13 +12,13 @@
   {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
   {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
 
-  <table style="width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem;">
+  <table class="data-table">
     <thead>
-      <tr style="text-align:left; border-bottom:1px solid #dde3e8;">
-        <th style="padding:0.5rem 0.4rem;">Consultant</th>
-        <th style="padding:0.5rem 0.4rem;">Hourly rate</th>
-        <th style="padding:0.5rem 0.4rem;"></th>
-        <th style="padding:0.5rem 0.4rem;"></th>
+      <tr>
+        <th>Consultant</th>
+        <th>Hourly rate</th>
+        <th></th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -29,20 +29,20 @@
       <form id="edit-employee-{{ e.id }}" method="post" action="/admin/employees/{{ e.id }}">
         <input type="hidden" name="name" value="{{ e.name }}">
       </form>
-      <tr style="border-bottom:1px solid #eef1f4;">
-        <td style="padding:0.5rem 0.4rem;">{{ e.name }}</td>
-        <td style="padding:0.5rem 0.4rem;">
-          <input form="edit-employee-{{ e.id }}" type="number" step="0.01" min="0" name="hourly_rate" value="{{ e.hourly_rate }}" required style="width:8rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
+      <tr>
+        <td>{{ e.name }}</td>
+        <td>
+          <input form="edit-employee-{{ e.id }}" type="number" step="0.01" min="0" name="hourly_rate" value="{{ e.hourly_rate }}" required style="width:8rem;">
         </td>
-        <td style="padding:0.5rem 0.4rem;">
-          <button form="edit-employee-{{ e.id }}" type="submit" class="secondary" style="margin:0; padding:0.35rem 0.7rem; font-size:0.85rem;">Save</button>
+        <td>
+          <button form="edit-employee-{{ e.id }}" type="submit" class="secondary btn-sm">Save</button>
         </td>
-        <td style="padding:0.5rem 0.4rem; color:#6c757d; font-size:0.8rem;">
+        <td style="color:var(--seidor-ink-soft); font-size:0.8rem;">
           {{ 'saved' if e.id in saved_ids else 'no rate saved yet (defaults to 0)' }}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" style="padding:0.5rem 0.4rem;">No consultants found &mdash; refresh from Redmine first so time entries are cached.</td></tr>
+      <tr><td colspan="4">No consultants found &mdash; refresh from Redmine first so time entries are cached.</td></tr>
       {% endfor %}
     </tbody>
   </table>
