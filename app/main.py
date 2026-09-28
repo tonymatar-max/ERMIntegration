@@ -937,7 +937,7 @@ def pp_report_excluded_managers_save(request: Request, manager_ids: str = Form("
 # Dashboard
 # ---------------------------------------------------------------------------
 
-def _render_dashboard_fragment(projects, timespent, report_date, team_ids, default_manager_id, redmine_base_url, ksa_projects=None):
+def _render_dashboard_fragment(projects, timespent, report_date, team_ids, default_manager_id, redmine_base_url, ksa_projects=None, excluded_projects=None, excluded_project_ids=None):
     with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
         html = f.read()
     html = html.replace("__PROJECT_DATA__", json.dumps(projects))
@@ -946,6 +946,11 @@ def _render_dashboard_fragment(projects, timespent, report_date, team_ids, defau
     html = html.replace("__TEAM_USER_IDS__", json.dumps(team_ids))
     html = html.replace("__DEFAULT_MANAGER_ID__", json.dumps(default_manager_id))
     html = html.replace("__KSA_PROJECTS__", json.dumps(ksa_projects or []))
+    # Excluded projects (admin "Excluded projects" setting): kept out of the
+    # Projects tab, but their time entries are still sent so the Time Analysis
+    # tab can optionally show them via its "Show excluded projects" toggle.
+    html = html.replace("__EXCLUDED_PROJECTS__", json.dumps(excluded_projects or []))
+    html = html.replace("__EXCLUDED_PROJECT_IDS__", json.dumps([str(i) for i in (excluded_project_ids or [])]))
     html = html.replace("__REDMINE_BASE_URL__", redmine_base_url)
     return html
 
@@ -964,11 +969,16 @@ def dashboard(request: Request):
     if has_settings:
         projects, fetched_on = settings_store.load_cache("projects")
         timespent, _ = settings_store.load_cache("timespent")
-        projects = _drop_excluded_projects(projects)
+        # Excluded *managers* stay hard-dropped everywhere. Excluded *projects*
+        # are removed from the Projects tab but their time entries are still
+        # made available to Time Analysis (toggle there decides visibility).
         projects = _drop_excluded_managers(projects)
         assigned_manager_id = _assigned_manager_id(user)
-        projects = _visible_projects(projects, user)
-        timespent = _visible_timespent(timespent, {p["id"] for p in projects})
+        visible_full = _visible_projects(projects, user)
+        excluded_ids = set(settings_store.get_pp_report_excluded_project_ids())
+        projects = [p for p in visible_full if p["id"] not in excluded_ids]
+        excluded_projects = [p for p in visible_full if p["id"] in excluded_ids]
+        timespent = _visible_timespent(timespent, {p["id"] for p in visible_full})
         ksa_ta_projects = []
         if not assigned_manager_id:
             # KSA consultants' uploaded timesheets (KSA isn't in Redmine) show
@@ -984,7 +994,7 @@ def dashboard(request: Request):
         prefs = settings_store.get_user_prefs(user["id"])
         team_ids = [t.strip() for t in prefs["my_team_ids"].split(",") if t.strip()]
         report_date = (fetched_on or "")[:10]
-        dashboard_html = _render_dashboard_fragment(projects, timespent, report_date, team_ids, assigned_manager_id, settings["redmine_url"], ksa_ta_projects)
+        dashboard_html = _render_dashboard_fragment(projects, timespent, report_date, team_ids, assigned_manager_id, settings["redmine_url"], ksa_ta_projects, excluded_projects, sorted(excluded_ids))
 
     return templates.TemplateResponse(
         "dashboard_shell.html",

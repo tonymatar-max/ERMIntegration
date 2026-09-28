@@ -1180,6 +1180,12 @@
         <option value="none">No grouping</option>
       </select>
     </label>
+    <label class="ta-exclude-toggle" id="ta-exclude-wrap" hidden>Excluded projects
+      <span style="display:flex;align-items:center;gap:8px;height:33px;">
+        <input type="checkbox" id="ta-show-excluded" style="width:auto;margin:0;">
+        <span id="ta-exclude-hint" style="font-size:12px;color:var(--ink-soft);">Hidden (per Settings)</span>
+      </span>
+    </label>
   </div>
 
   <div class="stats">
@@ -1388,6 +1394,11 @@
   const TA_TEAM_USER_IDS = __TEAM_USER_IDS__;
   const TA_STORAGE_KEY = "redmine-timespent-v1";
   let TA_DATA = TA_SNAPSHOT_DATA;
+  // Admin "Excluded projects": their meta (for grouping/lookup) and id set.
+  // Their time entries are in TA_DATA but hidden unless the toggle is on.
+  const TA_EXCLUDED_PROJECTS = __EXCLUDED_PROJECTS__;
+  const TA_EXCLUDED_PROJECT_IDS = new Set((__EXCLUDED_PROJECT_IDS__ || []).map(String));
+  let taShowExcluded = false;
   let taSortKey = "spent_on";
   let taSortDir = -1;
   // Multi-select: empty Set means "no restriction" (all included) — only
@@ -1616,8 +1627,14 @@
   // (DATA, from redmine_project_list.csv), matched by name — gives the
   // Time Analysis grouping context on total budget vs. logged time,
   // without needing a second copy of that data in timespent.csv.
+  // Project record for a name, from the visible Projects data OR the excluded
+  // set (so grouping/lookups still work when excluded projects are shown).
+  function taProjRec(projectName) {
+    return DATA.find(d => d.name === projectName) || TA_EXCLUDED_PROJECTS.find(d => d.name === projectName) || null;
+  }
+
   function taProjectTotals(projectName) {
-    const p = DATA.find(d => d.name === projectName);
+    const p = taProjRec(projectName);
     if (!p) return null;
     return { est: p.est, spent: p.spent };
   }
@@ -1629,11 +1646,11 @@
   function taGroupKeyFor(r) {
     if (taGroupBy === "consultant") return r.user_name || "(no consultant)";
     if (taGroupBy === "manager") {
-      const p = DATA.find(d => d.name === r.project_name);
+      const p = taProjRec(r.project_name);
       return (p && p.managerName) || "(no manager)";
     }
     if (taGroupBy === "country") {
-      const p = DATA.find(d => d.name === r.project_name);
+      const p = taProjRec(r.project_name);
       return (p && p.country) || "(no country)";
     }
     return r.project_name || "(no project)";
@@ -1644,11 +1661,12 @@
   // Rapport (project) code for a time entry, looked up from the Projects
   // tab data by project name — the time entries don't carry it themselves.
   function taRapportCode(projectName) {
-    const p = DATA.find(d => d.name === projectName);
+    const p = taProjRec(projectName);
     return (p && p.rapportCode) || "";
   }
 
   function taMatchesFilters(r) {
+    if (!taShowExcluded && TA_EXCLUDED_PROJECT_IDS.has(String(r.project_id))) return false;
     if (taFilterUsers.size && !taFilterUsers.has(r.user_name)) return false;
     if (taFilterProjects.size && !taFilterProjects.has(r.project_name)) return false;
     if (taFilterFrom && r.spent_on && r.spent_on < taFilterFrom) return false;
@@ -2641,6 +2659,22 @@
     taGroupBy = e.target.value;
     taRenderRows();
   });
+
+  // "Show excluded projects" toggle — only relevant when admins have
+  // configured excluded projects (Settings → PP Report Data). Off by default,
+  // so Time Analysis matches the rest of the app out of the box.
+  (function initExcludeToggle() {
+    const wrap = document.getElementById("ta-exclude-wrap");
+    const box = document.getElementById("ta-show-excluded");
+    const hint = document.getElementById("ta-exclude-hint");
+    if (!wrap || !box) return;
+    if (TA_EXCLUDED_PROJECT_IDS.size > 0) wrap.hidden = false;
+    box.addEventListener("change", () => {
+      taShowExcluded = box.checked;
+      if (hint) hint.textContent = taShowExcluded ? "Shown" : "Hidden (per Settings)";
+      taRenderRows();
+    });
+  })();
 
   // Export the currently-filtered time entries (flat, ignoring grouping) to
   // a real .xlsx via SheetJS; falls back to a CSV download if that CDN
