@@ -1148,6 +1148,14 @@
         </div>
       </div>
     </label>
+    <label>Group by
+      <select id="ta-groupby">
+        <option value="project">Project</option>
+        <option value="manager">Project manager</option>
+        <option value="consultant">Consultant</option>
+        <option value="country">Country</option>
+      </select>
+    </label>
   </div>
 
   <div class="stats">
@@ -1175,7 +1183,7 @@
       <div id="chart-by-user"></div>
     </div>
     <div class="chart-card">
-      <h3>Hours logged by project (filtered)</h3>
+      <h3 id="chart-by-project-title">Hours logged by project (filtered)</h3>
       <div id="chart-by-project"></div>
     </div>
   </div>
@@ -1363,6 +1371,11 @@
   let taFilterProjects = new Set();
   let taFilterFrom = "";
   let taFilterTo = "";
+  // How the Time Analysis rows are grouped: "project" (default), "manager",
+  // "consultant" or "country". Manager/country aren't on the time entries
+  // themselves — they're looked up from the Projects tab data (DATA) by
+  // project name (see taGroupKeyFor).
+  let taGroupBy = "project";
 
   function taSaveToStorage(rows) {
     if (!DROP_AND_CACHE_ENABLED) return;
@@ -1584,6 +1597,25 @@
     return { est: p.est, spent: p.spent };
   }
 
+  // Group-key for a time entry under the current "Group by" selection.
+  // Manager/Country come from the entry's project record in DATA (the
+  // Projects tab data), since the time entries themselves only carry
+  // project + consultant.
+  function taGroupKeyFor(r) {
+    if (taGroupBy === "consultant") return r.user_name || "(no consultant)";
+    if (taGroupBy === "manager") {
+      const p = DATA.find(d => d.name === r.project_name);
+      return (p && p.managerName) || "(no manager)";
+    }
+    if (taGroupBy === "country") {
+      const p = DATA.find(d => d.name === r.project_name);
+      return (p && p.country) || "(no country)";
+    }
+    return r.project_name || "(no project)";
+  }
+
+  const TA_GROUP_LABELS = { project: "Project", manager: "Project manager", consultant: "Consultant", country: "Country" };
+
   function taMatchesFilters(r) {
     if (taFilterUsers.size && !taFilterUsers.has(r.user_name)) return false;
     if (taFilterProjects.size && !taFilterProjects.has(r.project_name)) return false;
@@ -1595,11 +1627,12 @@
   function taRenderRows() {
     const rows = TA_DATA.filter(taMatchesFilters);
 
-    // Group by project, sort groups by project name; within each group,
+    // Group by the current "Group by" selection (project / manager /
+    // consultant / country), sort groups by name; within each group,
     // sort entries by the active column sort.
     const groups = new Map();
     rows.forEach(r => {
-      const key = r.project_name || "(no project)";
+      const key = taGroupKeyFor(r);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(r);
     });
@@ -1621,26 +1654,42 @@
       tbody.innerHTML = `<tr><td colspan="6" class="no-results">No time entries match these filters.</td></tr>`;
     } else {
       let html = "";
-      sortedGroupKeys.forEach(projName => {
-        const entries = sortEntries(groups.get(projName));
-        const projId = entries[0].project_id;
-        const totals = taProjectTotals(projName);
+      sortedGroupKeys.forEach(groupKey => {
+        const entries = sortEntries(groups.get(groupKey));
         const groupHours = entries.reduce((a, e) => a + e.hours, 0);
+        const isProject = taGroupBy === "project";
+        const totals = isProject ? taProjectTotals(groupKey) : null;
+        const projId = isProject ? entries[0].project_id : null;
 
         let metricsHtml = `<span><span class="m-label">Logged (filtered)</span>${fmtHours(groupHours)}h</span>`;
-        if (totals) {
+        if (isProject && totals) {
+          // Project groups keep the Est./Spent budget context from the
+          // Projects tab data.
           const overCls = totals.est > 0 && totals.spent > totals.est ? "m-over" : "";
           metricsHtml = `
             <span><span class="m-label">Est.</span>${fmtHours(totals.est)}h</span>
             <span class="${overCls}"><span class="m-label">Spent (total)</span>${fmtHours(totals.spent)}h</span>
             ${metricsHtml}`;
+        } else if (!isProject) {
+          // Manager/consultant/country groups span multiple projects — show
+          // how many projects (and consultants) roll up into the group.
+          const nProj = new Set(entries.map(e => e.project_name).filter(Boolean)).size;
+          const nUsers = new Set(entries.map(e => e.user_name).filter(Boolean)).size;
+          const extra = taGroupBy === "consultant"
+            ? `<span><span class="m-label">Projects</span>${nProj}</span>`
+            : `<span><span class="m-label">Projects</span>${nProj}</span><span><span class="m-label">Consultants</span>${nUsers}</span>`;
+          metricsHtml = `${extra}${metricsHtml}`;
         }
+
+        const nameHtml = (isProject && projId)
+          ? `<span class="pgid">${Number(projId) < 0 ? "KSA-" + (-Number(projId)) : "#" + escapeHtml(String(projId))}</span>${escapeHtml(groupKey)}`
+          : escapeHtml(groupKey);
 
         html += `
           <tr class="proj-group-row">
             <td colspan="6">
               <div class="proj-group-head">
-                <div class="proj-group-name">${projId ? `<span class="pgid">${Number(projId) < 0 ? "KSA-" + (-Number(projId)) : "#" + escapeHtml(String(projId))}</span>` : ""}${escapeHtml(projName)}</div>
+                <div class="proj-group-name">${nameHtml}</div>
                 <div class="proj-group-metrics">${metricsHtml}</div>
               </div>
             </td>
@@ -1663,6 +1712,13 @@
 
     document.getElementById("ta-count-note").textContent =
       `Showing ${rows.length} of ${TA_DATA.length} time entr${TA_DATA.length === 1 ? "y" : "ies"}`;
+
+    const footerEl = document.getElementById("ta-footer-note");
+    if (footerEl) {
+      footerEl.textContent = taGroupBy === "project"
+        ? "Rows are grouped by project; each project's header line shows its overall Est./Spent hours from the Projects tab data (when loaded) for quick context."
+        : `Rows are grouped by ${TA_GROUP_LABELS[taGroupBy].toLowerCase()}; each header line shows the logged hours plus how many projects${taGroupBy === "consultant" ? "" : " and consultants"} roll up into the group. Manager and country come from the Projects tab data.`;
+    }
 
     const totalHours = rows.reduce((a, r) => a + r.hours, 0);
     document.getElementById("ta-stat-entries").textContent = rows.length;
@@ -1730,17 +1786,23 @@
 
   function taRenderCharts(rows) {
     const byUser = new Map();
-    const byProject = new Map();
+    // Second chart follows the current "Group by" selection (project /
+    // manager / consultant / country) so it lines up with the table below.
+    const byGroup = new Map();
     rows.forEach(r => {
       if (r.user_name) byUser.set(r.user_name, (byUser.get(r.user_name) || 0) + r.hours);
-      if (r.project_name) byProject.set(r.project_name, (byProject.get(r.project_name) || 0) + r.hours);
+      const gk = taGroupKeyFor(r);
+      byGroup.set(gk, (byGroup.get(gk) || 0) + r.hours);
     });
 
     const userData = [...byUser.entries()].map(([user_name, hours]) => ({ user_name, hours }));
-    const projectData = [...byProject.entries()].map(([project_name, hours]) => ({ project_name, hours }));
+    const groupData = [...byGroup.entries()].map(([label, hours]) => ({ label, hours }));
+
+    const titleEl = document.getElementById("chart-by-project-title");
+    if (titleEl) titleEl.textContent = `Hours logged by ${TA_GROUP_LABELS[taGroupBy].toLowerCase()} (filtered)`;
 
     taBuildBarChart("chart-by-user", userData, "user_name");
-    taBuildBarChart("chart-by-project", projectData, "project_name");
+    taBuildBarChart("chart-by-project", groupData, "label");
   }
 
   function applyCsvText(text, sourceLabel) {
@@ -2525,6 +2587,10 @@
   document.getElementById("ta-filter-to").addEventListener("change", (e) => {
     taFilterTo = e.target.value;
     document.getElementById("ta-filter-preset").value = "";
+    taRenderRows();
+  });
+  document.getElementById("ta-groupby").addEventListener("change", (e) => {
+    taGroupBy = e.target.value;
     taRenderRows();
   });
   document.getElementById("ta-clear-filters").addEventListener("click", () => {
