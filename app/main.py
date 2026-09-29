@@ -1002,13 +1002,18 @@ def dashboard(request: Request):
     if has_settings:
         all_projects, fetched_on = settings_store.load_cache("projects")
         all_timespent, _ = settings_store.load_cache("timespent")
-        # Excluded *managers* stay hard-dropped everywhere. Excluded *projects*
-        # are removed from the Projects tab but their time entries are still
-        # made available to Time Analysis (toggle there decides visibility).
-        all_projects = _drop_excluded_managers(all_projects)
+        # Excluded *projects* and excluded *managers* are both removed from
+        # the Projects tab, but neither is hard-dropped here (unlike the PP
+        # Report) — their time entries stay available, and both tabs' "Show
+        # excluded projects" toggle can reveal the rows on demand.
         assigned_manager_id = _assigned_manager_id(user)
         visible_full = _visible_projects(all_projects, user)
-        excluded_ids = set(settings_store.get_pp_report_excluded_project_ids())
+        excluded_project_ids = set(settings_store.get_pp_report_excluded_project_ids())
+        excluded_manager_ids = set(settings_store.get_pp_report_excluded_manager_ids())
+        excluded_ids = {
+            p["id"] for p in visible_full
+            if p["id"] in excluded_project_ids or (p.get("managerId") or 0) in excluded_manager_ids
+        }
         projects = [p for p in visible_full if p["id"] not in excluded_ids]
         excluded_projects = [p for p in visible_full if p["id"] in excluded_ids]
 

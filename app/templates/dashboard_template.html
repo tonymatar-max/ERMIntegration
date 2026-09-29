@@ -1070,6 +1070,9 @@
       Project Manager
       <select id="manager-select"><option value="">All managers</option></select>
     </label>
+    <label class="pm-filter" id="excluded-projects-wrap" title="Projects excluded from reporting (admin Excluded projects / Excluded Project Managers settings) — hidden here by default, same as the rest of the app." hidden>
+      <span style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="show-excluded-projects" style="width:auto;"> Show excluded projects</span>
+    </label>
     <label class="pm-filter" title="Layer on top of the filter chip above — narrows whatever's currently selected down to just that country's projects.">
       Country
       <select id="country-select"><option value="">All countries</option></select>
@@ -1292,6 +1295,15 @@
   const DROP_AND_CACHE_ENABLED = false;
 
   let DATA = SNAPSHOT_DATA;
+  let showExcludedProjects = false;
+  // Excluded-but-revealable projects for the Projects tab — same list Time
+  // Analysis uses (TA_EXCLUDED_PROJECTS, defined further down) reused here
+  // once it exists; declared as a getter so load order doesn't matter.
+  function projectsTabBaseRows() {
+    return showExcludedProjects && typeof TA_EXCLUDED_PROJECTS !== "undefined"
+      ? DATA.concat(TA_EXCLUDED_PROJECTS)
+      : DATA;
+  }
   let REPORT_DATE = SNAPSHOT_DATE;
 
   let sortKey = "spent";
@@ -2094,12 +2106,12 @@
     if (!searchTerm) return true;
     const tokens = searchTerm.toLowerCase().split(/\s+/).filter(Boolean);
     const haystacks = [
-      p.name.toLowerCase(),
+      (p.name || "").toLowerCase(),
       String(p.id),
-      p.rapportCode.toLowerCase(),
+      (p.rapportCode || "").toLowerCase(),
       (p.country || "").toLowerCase(),
-      p.summary.toLowerCase(),
-      p.comments.toLowerCase(),
+      (p.summary || "").toLowerCase(),
+      (p.comments || "").toLowerCase(),
     ];
     return tokens.every(tok => haystacks.some(h => h.includes(tok)));
   }
@@ -2119,7 +2131,7 @@
   }
 
   function renderRows() {
-    let rows = DATA.filter(p => matchesFilter(p) && matchesSearch(p));
+    let rows = projectsTabBaseRows().filter(p => matchesFilter(p) && matchesSearch(p));
     const recentLogMap = buildRecentLogMap();
 
     rows.sort((a, b) => {
@@ -2192,8 +2204,9 @@
       }).join("");
     }
 
+    const baseCount = projectsTabBaseRows().length;
     document.getElementById("count-note").textContent =
-      `Showing ${rows.length} of ${DATA.length} project${DATA.length === 1 ? "" : "s"}`;
+      `Showing ${rows.length} of ${baseCount} project${baseCount === 1 ? "" : "s"}`;
 
     document.querySelectorAll("thead th").forEach(th => {
       th.classList.toggle("sorted", th.dataset.key === sortKey);
@@ -2665,6 +2678,20 @@
     taGroupBy = e.target.value;
     taRenderRows();
   });
+
+  // Projects tab's own "Show excluded projects" toggle — same reveal idea
+  // as Time Analysis's (below), independent state so each tab remembers its
+  // own choice.
+  (function initProjectsExcludeToggle() {
+    const wrap = document.getElementById("excluded-projects-wrap");
+    const box = document.getElementById("show-excluded-projects");
+    if (!wrap || !box) return;
+    if (typeof TA_EXCLUDED_PROJECT_IDS !== "undefined" && TA_EXCLUDED_PROJECT_IDS.size > 0) wrap.hidden = false;
+    box.addEventListener("change", () => {
+      showExcludedProjects = box.checked;
+      renderRows();
+    });
+  })();
 
   // "Show excluded projects" toggle — only relevant when admins have
   // configured excluded projects (Settings → PP Report Data). Off by default,
