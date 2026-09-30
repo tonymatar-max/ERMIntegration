@@ -607,31 +607,63 @@ def list_ksa_months() -> list:
 # --- KSA timesheet (Intra export) ------------------------------------------
 
 def parse_ksa_timesheet(file_bytes: bytes, month: str) -> list:
-    """Reads the KSA rows out of an Intra timesheet export (sheet with
-    Date / User / Project / HoursBase100 columns). Rows are KSA when either
-    'UserDivision' or 'Division' is 'KSA' — so a KSA-only file works too
-    (all its rows are KSA), and a company-wide export is narrowed down.
-    Only rows dated inside `month` are kept. Raises ValueError with a
-    user-facing message."""
+    """Reads KSA time entries out of an uploaded timesheet workbook. Two
+    layouts are accepted:
+
+    * The current "Spent time" export — header row (which may sit a few rows
+      below a title) with 'Rapports code (PEP)', 'Date', 'Project', 'Spent
+      time', 'User', 'Comment'. The Rapports code is the project code and
+      'Project' is its name.
+    * The older "Intra" export — 'Date', 'User', 'Project' (which there *is*
+      the code), 'HoursBase100'/'Hours', and optional 'UserDivision'/'Division'.
+
+    Rows are KSA when a Division column says 'KSA' — so a KSA-only file works
+    too (no Division column → every row kept). A trailing 'Total:' row (no
+    date) is ignored. Only rows dated inside `month` are kept. Raises
+    ValueError with a user-facing message."""
     import datetime
     import io
 
     import openpyxl
 
+    HOURS_COLS = ("Spent time", "HoursBase100", "Hours")
+    CODE_COLS = ("Rapports code (PEP)", "Rapports code (PEP", "Rapports code")
+
+    def header_index(cand_names):
+        nm = {n: i for i, n in enumerate(cand_names) if n}
+        has_code = any(c in nm for c in CODE_COLS) or "Project" in nm
+        if "Date" in nm and "User" in nm and has_code and any(h in nm for h in HOURS_COLS):
+            return nm
+        return None
+
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
-    ws, names = None, None
+    ws, idx, data_rows = None, None, None
     for cand in wb.worksheets:
-        header = next(cand.iter_rows(min_row=1, max_row=1, values_only=True), None)
-        cand_names = [str(x).strip() if x is not None else "" for x in (header or [])]
-        if "Date" in cand_names and "User" in cand_names and "Project" in cand_names and ("HoursBase100" in cand_names or "Hours" in cand_names):
-            ws, names = cand, cand_names
+        rows = list(cand.iter_rows(values_only=True))
+        # The header isn't always row 1 (the "Spent time" export has a title
+        # and blank rows above it) — scan the first several rows for it.
+        for ri, row in enumerate(rows[:15]):
+            cand_names = [str(x).strip() if x is not None else "" for x in row]
+            nm = header_index(cand_names)
+            if nm is not None:
+                ws, idx, data_rows = cand, nm, rows[ri + 1:]
+                break
+        if ws is not None:
             break
     if ws is None:
-        raise ValueError("No sheet with 'Date', 'User', 'Project' and 'HoursBase100' columns found — is this the Intra timesheet export?")
-    idx = {n: i for i, n in enumerate(names) if n}
-    c_date, c_user, c_proj = idx["Date"], idx["User"], idx["Project"]
-    c_desc = idx.get("Description")
-    c_hours = idx.get("HoursBase100", idx.get("Hours"))
+        raise ValueError(
+            "Couldn't find the timesheet header — expected a row with 'Date', "
+            "'User', a project/Rapports code column and a 'Spent time' (or "
+            "'Hours') column. Is this the Spent time / Intra export?")
+
+    c_date, c_user = idx["Date"], idx["User"]
+    c_hours = next(idx[h] for h in HOURS_COLS if h in idx)
+    c_code = next((idx[c] for c in CODE_COLS if c in idx), None)
+    if c_code is not None:
+        c_name = idx.get("Project")          # new layout: Project is the name
+    else:
+        c_code, c_name = idx.get("Project"), None  # old layout: Project is the code
+    c_desc = idx.get("Comment", idx.get("Description"))
     c_div = [idx[k] for k in ("UserDivision", "Division") if k in idx]
 
     def cell(row, i):
@@ -662,7 +694,7 @@ def parse_ksa_timesheet(file_bytes: bytes, month: str) -> list:
                 return 0.0
         return to_float(text)
 
-    all_rows = [r for r in ws.iter_rows(min_row=2, values_only=True) if cell(r, c_date) and cell(r, c_user)]
+    all_rows = [r for r in data_rows if cell(r, c_date) and cell(r, c_user)]
 
     def is_ksa(r):
         return any(str(cell(r, c) or "").strip().lower() == "ksa" for c in c_div)
@@ -681,7 +713,8 @@ def parse_ksa_timesheet(file_bytes: bytes, month: str) -> list:
         result.append({
             "spent_on": d.isoformat(),
             "user_name": " ".join(str(cell(r, c_user)).split()),
-            "project_code": str(cell(r, c_proj) or "").strip(),
+            "project_code": str(cell(r, c_code) or "").strip(),
+            "project_name": str(cell(r, c_name) or "").strip() if c_name is not None else "",
             "description": str(cell(r, c_desc) or "").strip(),
             "hours": hours,
         })
@@ -695,8 +728,8 @@ def save_ksa_timesheet(month: str, rows: list):
     with db.get_db() as conn:
         conn.execute("DELETE FROM ksa_timesheet WHERE month = ?", (month,))
         conn.executemany(
-            "INSERT INTO ksa_timesheet (month, spent_on, user_name, project_code, description, hours) VALUES (?, ?, ?, ?, ?, ?)",
-            [(month, r["spent_on"], r["user_name"], r["project_code"], r["description"], r["hours"]) for r in rows],
+            "INSERT INTO ksa_timesheet (month, spent_on, user_name, project_code, project_name, description, hours) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(month, r["spent_on"], r["user_name"], r["project_code"], r.get("project_name", ""), r["description"], r["hours"]) for r in rows],
         )
 
 
@@ -818,7 +851,10 @@ def ksa_timesheet_entries_all(roster: list) -> list:
         if matched is not None:
             project_id, project_name = -matched[0], matched[1]
         else:
-            project_id, project_name = ksa_synthetic_project_id(code), (code or "(no code)")
+            # Unmatched code (leave/support/other): use the real project name
+            # from the timesheet when it has one, else fall back to the code.
+            project_id = ksa_synthetic_project_id(code)
+            project_name = (r.get("project_name") or "").strip() or code or "(no code)"
         user_id, user_name = people[r["user_name"]]
         entries.append({
             "id": None, "project_id": project_id, "project_name": project_name, "issue_id": None,

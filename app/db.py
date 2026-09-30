@@ -174,6 +174,13 @@ def _migrate(conn):
     if not _column_exists(conn, "app_settings", "ksa_excluded_codes"):
         conn.execute("ALTER TABLE app_settings ADD COLUMN ksa_excluded_codes TEXT NOT NULL DEFAULT ''")
 
+    # The "Spent time" timesheet export carries the KSA project's real name
+    # (not just its code) — stored so Time Analysis can show it for codes that
+    # don't match an uploaded KSA project. Older rows keep '' and fall back to
+    # the code. See pp_report.parse_ksa_timesheet / ksa_timesheet_entries_all.
+    if not _column_exists(conn, "ksa_timesheet", "project_name"):
+        conn.execute("ALTER TABLE ksa_timesheet ADD COLUMN project_name TEXT NOT NULL DEFAULT ''")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a
@@ -394,6 +401,7 @@ def init_db():
                 spent_on TEXT NOT NULL,
                 user_name TEXT NOT NULL,
                 project_code TEXT NOT NULL DEFAULT '',
+                project_name TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '',
                 hours REAL NOT NULL DEFAULT 0
             );
