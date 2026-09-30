@@ -926,6 +926,22 @@ def refresh_ksa_in_locked_snapshot(month: str):
     return len(ksa_rows)
 
 
+def _ksa_timesheet_names() -> dict:
+    """project_code -> project name, from the stored KSA timesheets (the
+    "Spent time" export carries names; the older Intra format doesn't). Used
+    only as a fallback name source. Most recent non-empty name per code wins."""
+    names = {}
+    with db.get_db() as conn:
+        for r in conn.execute(
+            "SELECT project_code, project_name FROM ksa_timesheet "
+            "WHERE project_name != '' ORDER BY month ASC"
+        ).fetchall():
+            code = (r["project_code"] or "").strip()
+            if code:
+                names[code] = r["project_name"]
+    return names
+
+
 def ksa_report_rows(month: str, rate: float, ksa_hours: dict = None, employee_rates: dict = None) -> list:
     """The stored KSA rows for `month`, shaped like build_report()'s own
     rows so the PP Report table, totals, Country summary and exports pick
@@ -951,6 +967,10 @@ def ksa_report_rows(month: str, rate: float, ksa_hours: dict = None, employee_ra
     prior_rows = get_ksa_rows(previous_month_str(month))
     prev_import = {r["excel_project_id"]: r["amount_to_take"] for r in prior_rows}
     month_rows = get_ksa_rows(month)
+    # The "Spent time" timesheet carries each KSA project's real name, keyed by
+    # code — used only to fill in a workbook row that has no name of its own, so
+    # existing (and locked-month) rows are never renamed.
+    ts_names = _ksa_timesheet_names()
     carried_over = False
     if not month_rows and prior_rows:
         # This month's KSA workbook hasn't been imported yet: carry last
@@ -982,7 +1002,7 @@ def ksa_report_rows(month: str, rate: float, ksa_hours: dict = None, employee_ra
             "displayId": f"KSA-{r['excel_project_id']}",
             "excelSource": True,
             "carriedOver": carried_over,
-            "name": r["name"],
+            "name": r["name"] or ts_names.get((r["project_code"] or "").strip(), ""),
             "country": KSA_COUNTRY,
             "managerId": 0,
             "managerName": KSA_MANAGER_NAME,
