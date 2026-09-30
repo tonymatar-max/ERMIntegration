@@ -120,6 +120,51 @@ def save_pp_report_excluded_project_ids(normalized_csv: str):
         )
 
 
+def get_consultant_name_map_raw() -> str:
+    """Raw text of the consultant name map, one 'variant => canonical' per
+    line — for redisplaying in the admin textarea."""
+    with db.get_db() as conn:
+        row = conn.execute("SELECT consultant_name_map FROM app_settings WHERE id = 1").fetchone()
+        return row["consultant_name_map"] if row and row["consultant_name_map"] else ""
+
+
+def _name_norm_key(name: str) -> str:
+    """Case-insensitive, whitespace-collapsed key for matching a name variant."""
+    return " ".join((name or "").lower().split())
+
+
+def get_consultant_name_map() -> dict:
+    """{normalized variant -> canonical name}. Each line is 'variant =>
+    canonical' (also accepts '=', '|' or a tab as the separator); blank lines
+    and lines without a separator are ignored."""
+    mapping = {}
+    for line in get_consultant_name_map_raw().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        sep = next((s for s in ("=>", "|", "\t", "=") if s in line), None)
+        if not sep:
+            continue
+        variant, canonical = line.split(sep, 1)
+        variant, canonical = variant.strip(), canonical.strip()
+        if variant and canonical:
+            mapping[_name_norm_key(variant)] = canonical
+    return mapping
+
+
+def save_consultant_name_map(text: str):
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, consultant_name_map, updated_on)
+            VALUES (1, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                consultant_name_map = excluded.consultant_name_map, updated_on = datetime('now')
+            """,
+            (text,),
+        )
+
+
 def get_ksa_excluded_codes_raw() -> str:
     """Raw comma-separated KSA timesheet codes to treat as non-project time
     (leave, support, sales, …) — for redisplaying in the admin textbox."""

@@ -760,12 +760,28 @@ def _resolve_ksa_user_ids(names, roster: list) -> dict:
     timesheet later spells their name a little differently."""
     import difflib
 
+    # Admin "consultant name map" ({normalized variant -> canonical}): applied
+    # first so different spellings/orderings of one person collapse to the same
+    # name (and therefore the same id and one row everywhere).
+    alias = settings_store.get_consultant_name_map()
+
+    def apply_alias(n):
+        return alias.get(settings_store._name_norm_key(n), n)
+
     roster_tokens = [(u, _name_tokens(u["name"].replace(",", " "))) for u in roster if u["id"] > 0]
     resolved = {}
     with db.get_db() as conn:
-        known = {r["name"]: r["user_id"] for r in conn.execute("SELECT name, user_id FROM ksa_person").fetchall()}
+        rows = conn.execute("SELECT name, user_id FROM ksa_person ORDER BY rowid").fetchall()
+        known = {r["name"]: r["user_id"] for r in rows}
+        # One canonical display name per app-only id: the first-seen spelling
+        # (alias-applied), so unmapped order-flips that already share an id still
+        # show a single, consistent name.
+        canon_by_uid = {}
+        for r in rows:
+            canon_by_uid.setdefault(r["user_id"], apply_alias(r["name"]))
         for name in names:
-            toks = _name_tokens(name)
+            cname = apply_alias(name)
+            toks = _name_tokens(cname)
             match = next((u for u, rt in roster_tokens if rt and rt <= toks), None)
             if match is None:
                 key = " ".join(sorted(toks))
@@ -778,14 +794,16 @@ def _resolve_ksa_user_ids(names, roster: list) -> dict:
                 resolved[name] = (match["id"], match["name"])
                 continue
             if name in known:
-                resolved[name] = (known[name], name)
+                uid = known[name]
+                resolved[name] = (uid, canon_by_uid.get(uid, cname))
                 continue
             key = " ".join(sorted(toks))
-            similar = next((uid for other, uid in known.items() if difflib.SequenceMatcher(None, key, " ".join(sorted(_name_tokens(other)))).ratio() >= 0.85), None)
+            similar = next((uid for other, uid in known.items() if difflib.SequenceMatcher(None, key, " ".join(sorted(_name_tokens(apply_alias(other))))).ratio() >= 0.85), None)
             uid = similar if similar is not None else (min(list(known.values()) + [-100000]) - 1)
             conn.execute("INSERT OR IGNORE INTO ksa_person (name, user_id) VALUES (?, ?)", (name, uid))
             known[name] = uid
-            resolved[name] = (uid, name)
+            canon_by_uid.setdefault(uid, cname)
+            resolved[name] = (uid, canon_by_uid.get(uid, cname))
     return resolved
 
 

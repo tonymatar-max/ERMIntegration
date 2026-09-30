@@ -27,6 +27,14 @@
     <input type="text" name="codes" value="{{ ksa_excluded_codes }}" placeholder="e.g. 123, PSASUPPORT, PSASALES">
     <button type="submit">Save</button>
   </form>
+
+  <h1 style="margin-top:2rem;">Consultant name map</h1>
+  <p class="hint">Merge different spellings or word-orders of the same consultant into one person &mdash; the KSA timesheet sometimes flips the name order (e.g. <code>El Raae Fatma</code> vs <code>Fatma El Raae</code>), which otherwise splits their hours across <strong>Utilization</strong>, <strong>Resource Planning</strong> and <strong>Time Analysis</strong>. One mapping per line, <code>variant =&gt; canonical name</code>. Case-insensitive; the canonical name is what gets shown everywhere.</p>
+  <form method="post" action="/admin/pp-report-months/consultant-name-map">
+    <label>Mappings (one per line: <code>variant =&gt; canonical</code>)</label>
+    <textarea name="name_map" rows="5" style="width:100%; padding:0.55rem 0.7rem; border:1px solid var(--seidor-border); border-radius:0.4rem; font-size:0.9rem; font-family:inherit; box-sizing:border-box; resize:vertical;" placeholder="El Raae Fatma => Fatma El Raae&#10;Al Saadi Ahmad => Ahmad Al Saadi&#10;Hamad Ahmad => Ahmad Hamad">{{ consultant_name_map }}</textarea>
+    <button type="submit">Save</button>
+  </form>
 </div>
 
 <div class="wrap wide">

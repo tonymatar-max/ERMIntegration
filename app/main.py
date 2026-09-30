@@ -67,6 +67,7 @@ class templates:
             context.setdefault("ksa_timesheet_months", pp_report.list_ksa_timesheet_months())
             context.setdefault("default_ksa_month", pp_report.next_month_to_lock())
             context.setdefault("ksa_excluded_codes", settings_store.get_ksa_excluded_codes_raw())
+            context.setdefault("consultant_name_map", settings_store.get_consultant_name_map_raw())
         html = _jinja_env.get_template(name).render(**context)
         return HTMLResponse(html, status_code=status_code)
 
@@ -952,6 +953,33 @@ def ksa_excluded_codes_save(request: Request, codes: str = Form("")):
     logger.info("KSA excluded timesheet codes saved by %r: %s", user["username"], normalized or "(none)")
 
     ok = f"Saved — {len(parts)} KSA code(s) excluded from Time Analysis." if parts else "Saved — no KSA codes excluded."
+    return templates.TemplateResponse(
+        "pp_report_months.html",
+        {
+            "request": request, "user": user, "months": pp_report.list_report_months(),
+            "excluded_project_ids": settings_store.get_pp_report_excluded_project_ids_raw(),
+            "excluded_manager_ids": settings_store.get_pp_report_excluded_manager_ids_raw(),
+            "error": None, "ok": ok,
+        },
+    )
+
+
+@app.post("/admin/pp-report-months/consultant-name-map", response_class=HTMLResponse)
+def consultant_name_map_save(request: Request, name_map: str = Form("")):
+    """Admin-editable consultant name map — one 'variant => canonical' per
+    line. Merges different spellings/orderings of one consultant (e.g. the KSA
+    timesheet's reversed name order) so utilization, resource planning and Time
+    Analysis treat them as a single person."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+
+    settings_store.save_consultant_name_map(name_map)
+    n = len(settings_store.get_consultant_name_map())
+    logger.info("Consultant name map saved by %r: %d mapping(s)", user["username"], n)
+    ok = f"Saved — {n} consultant name mapping(s)." if n else "Saved — no name mappings."
     return templates.TemplateResponse(
         "pp_report_months.html",
         {

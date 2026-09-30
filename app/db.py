@@ -181,6 +181,13 @@ def _migrate(conn):
     if not _column_exists(conn, "ksa_timesheet", "project_name"):
         conn.execute("ALTER TABLE ksa_timesheet ADD COLUMN project_name TEXT NOT NULL DEFAULT ''")
 
+    # Admin-editable consultant name map ("variant => canonical" per line) —
+    # merges name spellings/orderings (e.g. the KSA timesheet's "El Raae Fatma"
+    # vs "Fatma El Raae") into one person so utilization, resource planning and
+    # Time Analysis stop splitting them. See settings_store.get_consultant_name_map.
+    if not _column_exists(conn, "app_settings", "consultant_name_map"):
+        conn.execute("ALTER TABLE app_settings ADD COLUMN consultant_name_map TEXT NOT NULL DEFAULT ''")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a
