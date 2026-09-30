@@ -86,6 +86,51 @@ def compute_next_run(schedule: dict, now: datetime, last_auto_fetch_on: datetime
     return None
 
 
+def _most_recent_occurrence(schedule: dict, now: datetime):
+    """The latest daily/weekly/monthly scheduled wall-clock time at or
+    before `now` (naive, server-local) — the counterpart to
+    compute_next_run()'s "next" time, used to detect a schedule that's
+    already due. compute_next_run() itself can't be reused for this: by
+    construction it always returns a time strictly after `now` (that's
+    what "next run" means), so `now >= next_run` can never become true no
+    matter how often _tick() recomputes it — the bug this function fixes.
+    Interval mode isn't handled here; it already tracks due-ness correctly
+    via last_auto_fetch_on in compute_next_run()."""
+    mode = schedule.get("mode") or "off"
+    if mode in ("off", "interval"):
+        return None
+
+    hour, minute = _parse_hhmm(schedule.get("time"))
+
+    if mode == "daily":
+        candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate > now:
+            candidate -= timedelta(days=1)
+        return candidate
+
+    if mode == "weekly":
+        target_weekday = schedule.get("weekday")
+        target_weekday = 0 if target_weekday is None else target_weekday
+        candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        days_back = (candidate.weekday() - target_weekday) % 7
+        candidate -= timedelta(days=days_back)
+        if candidate > now:
+            candidate -= timedelta(days=7)
+        return candidate
+
+    if mode == "monthly":
+        day = schedule.get("day_of_month") or 1
+        candidate = _monthly_candidate(now.year, now.month, day, hour, minute)
+        if candidate > now:
+            if now.month == 1:
+                candidate = _monthly_candidate(now.year - 1, 12, day, hour, minute)
+            else:
+                candidate = _monthly_candidate(now.year, now.month - 1, day, hour, minute)
+        return candidate
+
+    return None
+
+
 def _parse_iso_to_local(value):
     """fetch_status stores timestamps as UTC-aware ISO strings
     (datetime.now(timezone.utc).isoformat()) — converts to a naive
@@ -128,8 +173,21 @@ async def _tick():
 
     now = datetime.now()
     last_auto_fetch_on = _parse_iso_to_local(status.get("last_auto_fetch_on"))
-    next_run = compute_next_run(schedule, now, last_auto_fetch_on)
-    if next_run is None or now < next_run:
+
+    if schedule["mode"] == "interval":
+        next_run = compute_next_run(schedule, now, last_auto_fetch_on)
+        due = next_run is not None and now >= next_run
+        next_run_for_log = next_run
+    else:
+        # daily/weekly/monthly: fire once we're past today's/this week's/
+        # this month's scheduled time and haven't already fetched since —
+        # see _most_recent_occurrence's docstring for why compute_next_run()
+        # (a strictly-future time) can't drive this check.
+        occurrence = _most_recent_occurrence(schedule, now)
+        due = occurrence is not None and (last_auto_fetch_on is None or last_auto_fetch_on < occurrence)
+        next_run_for_log = occurrence
+
+    if not due:
         return
 
     # Same atomic compare-and-set the manual refresh button uses — closes
@@ -138,7 +196,7 @@ async def _tick():
     if not started:
         return
 
-    logger.info("Auto-refresh due (scheduled for %s, now %s) — starting", next_run, now)
+    logger.info("Auto-refresh due (scheduled for %s, now %s) — starting", next_run_for_log, now)
     # Fire-and-forget in a worker thread — run_refresh() is a long,
     # blocking series of HTTP calls (minutes, not seconds); awaiting it
     # directly here would freeze this scheduler loop (and, since it
