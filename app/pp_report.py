@@ -878,7 +878,7 @@ def ksa_timesheet_entries_all(roster: list) -> list:
             "id": None, "project_id": project_id, "project_name": project_name, "issue_id": None,
             "user_id": user_id, "user_name": user_name, "activity_name": None,
             "hours": r["hours"], "spent_on": r["spent_on"], "comments": r["description"],
-            "project_code": code,
+            "project_code": code, "country": KSA_COUNTRY,
         })
     return entries
 

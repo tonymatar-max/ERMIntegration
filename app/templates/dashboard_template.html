@@ -1138,6 +1138,9 @@
     <label>Project Manager
       <select id="ta-manager-select"><option value="">All managers</option></select>
     </label>
+    <label>Country
+      <select id="ta-country-select"><option value="">All countries</option></select>
+    </label>
     <label>Date range
       <select id="ta-filter-preset">
         <option value="">Custom</option>
@@ -1420,6 +1423,7 @@
   // once the user actually checks specific options does the filter narrow.
   let taFilterUsers = new Set();
   let taFilterProjects = new Set();
+  let taFilterCountry = "";
   let taFilterFrom = "";
   let taFilterTo = "";
   // How the Time Analysis rows are grouped: "project" (default), "manager",
@@ -1661,6 +1665,14 @@
   // Manager/Country come from the entry's project record in DATA (the
   // Projects tab data), since the time entries themselves only carry
   // project + consultant.
+  // Country for a time entry: KSA entries carry it directly; Redmine entries
+  // derive it from their project record.
+  function taCountryFor(r) {
+    if (r.country) return r.country;
+    const p = taProjRec(r.project_name);
+    return (p && p.country) || "";
+  }
+
   function taGroupKeyFor(r) {
     if (taGroupBy === "consultant") return r.user_name || "(no consultant)";
     if (taGroupBy === "manager") {
@@ -1668,8 +1680,7 @@
       return (p && p.managerName) || "(no manager)";
     }
     if (taGroupBy === "country") {
-      const p = taProjRec(r.project_name);
-      return (p && p.country) || "(no country)";
+      return taCountryFor(r) || "(no country)";
     }
     return r.project_name || "(no project)";
   }
@@ -1685,6 +1696,7 @@
 
   function taMatchesFilters(r) {
     if (!taShowExcluded && TA_EXCLUDED_PROJECT_IDS.has(String(r.project_id))) return false;
+    if (taFilterCountry && taCountryFor(r) !== taFilterCountry) return false;
     if (taFilterUsers.size && !taFilterUsers.has(r.user_name)) return false;
     if (taFilterProjects.size && !taFilterProjects.has(r.project_name)) return false;
     if (taFilterFrom && r.spent_on && r.spent_on < taFilterFrom) return false;
@@ -2483,6 +2495,16 @@
     select.addEventListener("change", () => applyTaManagerFilter(select.value));
   })();
 
+  (function setupTaCountryDropdown() {
+    const select = document.getElementById("ta-country-select");
+    if (!select) return;
+    const countries = new Set();
+    TA_DATA.forEach(r => { const c = taCountryFor(r); if (c) countries.add(c); });
+    [...countries].sort((a, b) => a.localeCompare(b))
+      .forEach(c => select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
+    select.addEventListener("change", () => { taFilterCountry = select.value; taRenderRows(); });
+  })();
+
   document.getElementById("search").addEventListener("input", (e) => {
     searchTerm = e.target.value.trim();
     renderRows();
@@ -2752,12 +2774,14 @@
   document.getElementById("ta-clear-filters").addEventListener("click", () => {
     taFilterUsers.clear();
     taFilterProjects.clear();
+    taFilterCountry = "";
     taFilterFrom = ""; taFilterTo = "";
     msRenderOptions("user"); msUpdateButtonLabel("user");
     msRenderOptions("project"); msUpdateButtonLabel("project");
     document.getElementById("ta-filter-from").value = "";
     document.getElementById("ta-filter-to").value = "";
     document.getElementById("ta-filter-preset").value = "";
+    const cs = document.getElementById("ta-country-select"); if (cs) cs.value = "";
     taRenderRows();
   });
 
