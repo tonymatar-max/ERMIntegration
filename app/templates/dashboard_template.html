@@ -1139,7 +1139,18 @@
       <select id="ta-manager-select"><option value="">All managers</option></select>
     </label>
     <label>Country
-      <select id="ta-country-select"><option value="">All countries</option></select>
+      <div class="ms-wrap" id="ms-wrap-country">
+        <button class="ms-btn" id="ms-btn-country" type="button" aria-haspopup="listbox" aria-expanded="false">All countries</button>
+        <div class="ms-popover" id="ms-popover-country" role="listbox" hidden>
+          <input type="text" class="ms-search" id="ms-search-country" placeholder="Search countries…" autocomplete="off">
+          <div class="ms-popover-actions">
+            <button type="button" data-ms="country" data-action="all">Select all</button>
+            <button type="button" data-ms="country" data-action="none">Clear</button>
+            <span class="ms-count" id="ms-count-country"></span>
+          </div>
+          <div class="ms-option-list" id="ms-options-country"></div>
+        </div>
+      </div>
     </label>
     <label>Date range
       <select id="ta-filter-preset">
@@ -1423,7 +1434,7 @@
   // once the user actually checks specific options does the filter narrow.
   let taFilterUsers = new Set();
   let taFilterProjects = new Set();
-  let taFilterCountry = "";
+  let taFilterCountries = new Set();
   let taFilterFrom = "";
   let taFilterTo = "";
   // How the Time Analysis rows are grouped: "project" (default), "manager",
@@ -1481,6 +1492,7 @@
   const msState = {
     user: { set: () => taFilterUsers, options: [], searchTerm: "" },
     project: { set: () => taFilterProjects, options: [], searchTerm: "" },
+    country: { set: () => taFilterCountries, options: [], searchTerm: "" },
   };
 
   function msLabel(kind, selectedSet, allOptions, allLabel) {
@@ -1510,7 +1522,7 @@
   function msRenderOptions(kind) {
     const optionsEl = document.getElementById(`ms-options-${kind}`);
     const countEl = document.getElementById(`ms-count-${kind}`);
-    const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+    const selectedSet = msState[kind].set();
     const visible = msVisibleOptions(kind);
 
     countEl.textContent = msState[kind].searchTerm.trim()
@@ -1555,17 +1567,15 @@
 
   function msUpdateButtonLabel(kind) {
     const btn = document.getElementById(`ms-btn-${kind}`);
-    const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
-    const allLabel = kind === "user" ? "All users" : "All projects";
+    const selectedSet = msState[kind].set();
+    const allLabel = kind === "user" ? "All users" : kind === "project" ? "All projects" : "All countries";
     btn.textContent = msLabel(kind, selectedSet, msState[kind].options, allLabel);
     btn.classList.toggle("has-selection", selectedSet.size > 0);
   }
 
   function msPopulate(kind, values) {
     msState[kind].options = [...new Set(values)].filter(Boolean).sort();
-    // Drop any previously-selected values that no longer exist in the data
-    // (e.g. a fresh CSV load with a different set of users/projects).
-    const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+    const selectedSet = msState[kind].set();
     [...selectedSet].forEach(v => { if (!msState[kind].options.includes(v)) selectedSet.delete(v); });
     msState[kind].searchTerm = "";
     const searchInput = document.getElementById(`ms-search-${kind}`);
@@ -1587,7 +1597,7 @@
   }
 
   function msCloseAll(exceptKind) {
-    ["user", "project"].forEach(kind => {
+    ["user", "project", "country"].forEach(kind => {
       if (kind !== exceptKind) msTogglePopover(kind, true);
     });
   }
@@ -1696,7 +1706,7 @@
 
   function taMatchesFilters(r) {
     if (!taShowExcluded && TA_EXCLUDED_PROJECT_IDS.has(String(r.project_id))) return false;
-    if (taFilterCountry && taCountryFor(r) !== taFilterCountry) return false;
+    if (taFilterCountries.size && !taFilterCountries.has(taCountryFor(r))) return false;
     if (taFilterUsers.size && !taFilterUsers.has(r.user_name)) return false;
     if (taFilterProjects.size && !taFilterProjects.has(r.project_name)) return false;
     if (taFilterFrom && r.spent_on && r.spent_on < taFilterFrom) return false;
@@ -2496,13 +2506,9 @@
   })();
 
   (function setupTaCountryDropdown() {
-    const select = document.getElementById("ta-country-select");
-    if (!select) return;
     const countries = new Set();
     TA_DATA.forEach(r => { const c = taCountryFor(r); if (c) countries.add(c); });
-    [...countries].sort((a, b) => a.localeCompare(b))
-      .forEach(c => select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
-    select.addEventListener("change", () => { taFilterCountry = select.value; taRenderRows(); });
+    msPopulate("country", [...countries]);
   })();
 
   document.getElementById("search").addEventListener("input", (e) => {
@@ -2568,8 +2574,8 @@
     taHandleFile(file);
   });
 
-  // ---------- time analysis: multi-select filters (User / Project) ----------
-  ["user", "project"].forEach(kind => {
+  // ---------- time analysis: multi-select filters (User / Project / Country) ----------
+  ["user", "project", "country"].forEach(kind => {
     const btn = document.getElementById(`ms-btn-${kind}`);
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2582,7 +2588,7 @@
     btn.addEventListener("click", () => {
       const kind = btn.dataset.ms;
       const action = btn.dataset.action;
-      const selectedSet = kind === "user" ? taFilterUsers : taFilterProjects;
+      const selectedSet = msState[kind].set();
       // Scoped to whatever the search box currently shows, so "Select all"
       // after searching "SAP" only selects the SAP projects, not all 62 —
       // and "Clear" while searched only clears matches, leaving selections
@@ -2600,7 +2606,7 @@
   });
 
   // ---------- time analysis: multi-select search boxes ----------
-  ["user", "project"].forEach(kind => {
+  ["user", "project", "country"].forEach(kind => {
     const searchInput = document.getElementById(`ms-search-${kind}`);
     searchInput.addEventListener("input", (e) => {
       msState[kind].searchTerm = e.target.value;
@@ -2774,14 +2780,12 @@
   document.getElementById("ta-clear-filters").addEventListener("click", () => {
     taFilterUsers.clear();
     taFilterProjects.clear();
-    taFilterCountry = "";
+    taFilterCountries.clear();
     taFilterFrom = ""; taFilterTo = "";
-    msRenderOptions("user"); msUpdateButtonLabel("user");
-    msRenderOptions("project"); msUpdateButtonLabel("project");
+    ["user", "project", "country"].forEach(k => { msRenderOptions(k); msUpdateButtonLabel(k); });
     document.getElementById("ta-filter-from").value = "";
     document.getElementById("ta-filter-to").value = "";
     document.getElementById("ta-filter-preset").value = "";
-    const cs = document.getElementById("ta-country-select"); if (cs) cs.value = "";
     taRenderRows();
   });
 
