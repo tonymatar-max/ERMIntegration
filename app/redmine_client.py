@@ -274,6 +274,34 @@ def build_report(base_url, api_key, query_id, excluded_ids=None):
         timespent_rows.extend(row_timespent)
         country_derive_seconds += derive_seconds
 
+    # The project list comes from a saved query (which can omit internal /
+    # activity / support projects), but time entries are fetched instance-wide —
+    # so some projects have logged hours yet no row here, and their time would
+    # land in Time Analysis with no country/manager. Pull those missing
+    # projects' metadata too (one extra full-project fetch, used only as a
+    # lookup) and build their rows, so every project that has hours is imported
+    # with its country. Admin-excluded projects stay out.
+    fetched_ids = {p["id"] for p in projects}
+    orphan_ids = [pid for pid in time_entries_by_project
+                  if pid and pid not in fetched_ids and pid not in excluded_ids]
+    if orphan_ids:
+        t0 = time.perf_counter()
+        all_by_id = {p["id"]: p for p in fetch_all_projects(base_url, api_key, None)}
+        found = 0
+        for pid in orphan_ids:
+            p = all_by_id.get(pid)
+            if not p:
+                continue
+            found += 1
+            issues = issues_by_project.get(pid, [])
+            time_entries = time_entries_by_project.get(pid, [])
+            row, row_timespent, derive_seconds = _build_project_row(p, issues, time_entries, base_url, api_key)
+            project_rows.append(row)
+            timespent_rows.extend(row_timespent)
+            country_derive_seconds += derive_seconds
+        logger.info("Refresh timing — imported %d project(s) that had time entries but weren't in the query: %.2fs",
+                    found, time.perf_counter() - t0)
+
     logger.info("Refresh timing — derive country from rapport code (open projects only): %.2fs", country_derive_seconds)
     logger.info("Refresh timing — total: %.2fs", time.perf_counter() - refresh_started)
 
