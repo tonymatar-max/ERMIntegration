@@ -2744,12 +2744,12 @@
     const rows = TA_DATA.filter(taMatchesFilters);
     if (!rows.length) { taSetLoadNote("Nothing to export for the current filters.", "err"); return; }
     const records = rows.map(e => {
-      const p = DATA.find(d => d.name === e.project_name);
+      const p = taProjRec(e.project_name);
       return {
         "Date": e.spent_on || "",
-        "Rapport code": (p && p.rapportCode) || "",
+        "Rapport code": taRapportCode(e.project_name) || "",
         "Project": e.project_name || "",
-        "Country": (p && p.country) || "",
+        "Country": taCountryFor(e) || "",
         "Project manager": (p && p.managerName) || "",
         "Consultant": e.user_name || "",
         "Issue": e.issue_id ? "#" + e.issue_id : "",
