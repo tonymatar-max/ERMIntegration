@@ -13,7 +13,21 @@
   .rp-btn:disabled { opacity:0.6; cursor:default; }
   .rp-btn-secondary { background: #fff; color: var(--seidor-blue); border: 1.5px solid var(--seidor-blue); box-shadow: none; }
   .rp-btn-secondary:hover { background: #f0f4ff; filter: none; }
+  .rp-btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 5px; }
   .rp-hint { color: var(--seidor-ink-soft); font-size: 0.85rem; }
+
+  /* sticky company totals */
+  .rp-totals-bar { position: sticky; top: 0; z-index: 20; background: #fff; border: 1px solid var(--seidor-border); border-radius: 10px; padding: 0.6rem 1rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); flex-wrap: wrap; }
+  .rp-totals-label { font-weight: 600; font-size: 0.82rem; white-space: nowrap; }
+  .rp-totals-months { display: flex; gap: 0.6rem; flex: 1; flex-wrap: wrap; }
+  .rp-totals-month { text-align: center; min-width: 7rem; }
+  .rp-totals-month-label { font-size: 0.65rem; text-transform: uppercase; color: var(--seidor-ink-soft); letter-spacing: 0.05em; }
+  .rp-totals-month-val { font-size: 0.85rem; font-weight: 600; }
+
+  /* bulk actions bar */
+  .rp-bulk-bar { display: none; align-items: center; gap: 0.75rem; padding: 0.5rem 1rem; margin-bottom: 0.75rem; background: #eef2f8; border-radius: 8px; font-size: 0.85rem; }
+  .rp-bulk-bar.visible { display: flex; }
+  .rp-bulk-count { font-weight: 600; }
 
   /* consultant card */
   .rp-card { border: 1px solid var(--seidor-border); border-radius: 10px; margin-bottom: 0.75rem; overflow: hidden; background: #fff; }
@@ -33,6 +47,14 @@
   .rp-bar-over { background: #a4262c; }
   .rp-month-bar-text { font-size: 0.7rem; font-weight: 500; }
   .rp-card-projects { font-size: 0.75rem; color: var(--seidor-ink-soft); white-space: nowrap; }
+  .rp-over-badge { background: #a4262c; color: #fff; font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 9px; margin-left: 0.3rem; white-space: nowrap; }
+
+  /* drag-and-drop */
+  .rp-card.drag-over { outline: 2px dashed var(--seidor-blue); outline-offset: -2px; background: #f0f4ff; }
+  tr.rp-dragging { opacity: 0.4; }
+  tr[draggable="true"] { cursor: grab; }
+  tr[draggable="true"]:active { cursor: grabbing; }
+  .rp-drag-handle { cursor: grab; color: var(--seidor-ink-soft); font-size: 0.9rem; padding-right: 0.3rem; }
 
   /* project table inside card */
   .rp-card-body { padding: 0; }
@@ -46,10 +68,15 @@
   .rp-project-name { font-weight: 500; }
   .rp-rapport { color: var(--seidor-ink-soft); font-size: 0.78rem; }
   .rp-remaining { color: var(--seidor-ink-soft); font-size: 0.82rem; }
-  .rp-row-actions { font-size: 0.78rem; }
-  .rp-row-actions a { color: var(--seidor-blue); text-decoration: none; }
-  .rp-row-actions a:hover { text-decoration: underline; }
+  .rp-row-actions { font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+  .rp-row-actions a, .rp-row-actions button { color: var(--seidor-blue); text-decoration: none; background: none; border: none; cursor: pointer; font-size: 0.78rem; padding: 0; }
+  .rp-row-actions a:hover, .rp-row-actions button:hover { text-decoration: underline; }
   .rp-extra-badge { font-size: 0.68rem; background: #eef2f8; color: var(--seidor-blue); padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: 500; }
+
+  /* quick-fill buttons */
+  .rp-qf { display: flex; gap: 0.3rem; margin-top: 0.2rem; }
+  .rp-qf button { font-size: 0.68rem; color: var(--seidor-blue); background: #eef2f8; border: none; border-radius: 4px; padding: 0.15rem 0.4rem; cursor: pointer; white-space: nowrap; }
+  .rp-qf button:hover { background: #dce3f0; }
 
   /* add project row */
   .rp-add-row { padding: 0.5rem 1rem; border-top: 1px solid #f0f2f5; }
@@ -66,13 +93,16 @@
   /* expand/collapse all */
   .rp-toggle-all { font-size: 0.82rem; color: var(--seidor-blue); background: none; border: none; cursor: pointer; font-weight: 500; }
   .rp-toggle-all:hover { text-decoration: underline; }
+
+  /* bulk checkbox */
+  .rp-bulk-cb { width: 1rem; height: 1rem; cursor: pointer; accent-color: var(--seidor-blue); }
 </style>
 <div id="rp-scope">
   <h1>Resource Planning</h1>
   <p class="rp-hint">
     Rolling 6-month plan ({{ month_labels|join(' / ') }}) &mdash; planned hours per consultant per project.
     Each consultant card shows their capacity utilization. Click to expand and edit project hours.
-    Cells auto-save on blur.
+    Drag a project row to another consultant to reassign. Cells auto-save on blur.
     {% if fetched_on %}Based on the Redmine data cached as of <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on }}"></span>.{% endif %}
   </p>
 
@@ -90,12 +120,35 @@
     <span class="rp-hint" id="rp-count-hint"></span>
   </div>
 
+  <!-- Sticky company-wide totals -->
+  <div class="rp-totals-bar" id="rp-totals-bar">
+    <span class="rp-totals-label">Company totals</span>
+    <div class="rp-totals-months" id="rp-totals-months">
+      {% for month in months %}
+      <div class="rp-totals-month" data-month="{{ month }}">
+        <div class="rp-totals-month-label">{{ month_labels[loop.index0][:3] }}</div>
+        <div class="rp-totals-month-val" id="rp-total-{{ month }}">—</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Bulk actions bar -->
+  <div class="rp-bulk-bar" id="rp-bulk-bar">
+    <span class="rp-bulk-count" id="rp-bulk-count">0</span> rows selected
+    <button class="rp-btn rp-btn-sm" id="rp-bulk-move" type="button">Move selected</button>
+    <button class="rp-btn rp-btn-sm rp-btn-secondary" id="rp-bulk-zero" type="button">Zero hours</button>
+    <button class="rp-btn rp-btn-sm rp-btn-secondary" id="rp-bulk-deselect" type="button">Deselect all</button>
+  </div>
+
   <div id="rp-cards">
     {% for s in summary %}
     <div class="rp-card collapsed" data-user-id="{{ s.userId }}" data-user-name="{{ s.userName|lower }}">
       <div class="rp-card-header" title="Click to expand">
         <span class="rp-card-chevron">&#9660;</span>
-        <span class="rp-card-name">{{ s.userName }}</span>
+        <span class="rp-card-name">{{ s.userName }}
+          <span class="rp-over-badge" style="display:none;" data-over-badge></span>
+        </span>
         <div class="rp-card-bars">
           {% for month in months %}
           <div class="rp-month-bar-wrap" data-month="{{ month }}">
@@ -122,6 +175,7 @@
         <table class="rp-table">
           <thead>
             <tr>
+              <th style="width:1.5rem;"><input type="checkbox" class="rp-bulk-cb rp-card-select-all" title="Select all in this card"></th>
               <th style="min-width:14rem;">Project</th>
               <th>Remaining</th>
               {% for label in month_labels %}<th>{{ label }}</th>{% endfor %}
@@ -130,10 +184,12 @@
           </thead>
           <tbody>
             {% for r in rows if r.userId == s.userId %}
-            <tr data-search="{{ (r.userName ~ ' ' ~ r.projectName)|lower }}" data-project-id="{{ r.projectId }}" data-project-name="{{ r.projectName }}"
+            <tr draggable="true" data-search="{{ (r.userName ~ ' ' ~ r.projectName)|lower }}" data-project-id="{{ r.projectId }}" data-project-name="{{ r.projectName }}"
                 data-remaining="{{ r.remaining }}" data-is-extra-row="{{ 'true' if r.isExtraRow else 'false' }}"
-                data-user-id="{{ r.userId }}">
+                data-user-id="{{ r.userId }}" data-user-name="{{ r.userName }}">
+              <td><input type="checkbox" class="rp-bulk-cb rp-row-cb"></td>
               <td>
+                <span class="rp-drag-handle" title="Drag to move">⠿</span>
                 <span class="rp-project-name">{{ r.projectName }}</span>
                 {% if r.rapportCode %}<br><span class="rp-rapport">{{ r.rapportCode }}</span>{% endif %}
                 {% if r.isExtraRow %} <span class="rp-extra-badge">split</span>{% endif %}
@@ -151,6 +207,10 @@
                 {% if r.isExtraRow %}
                   <a href="#" class="rp-remove-link" data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}">remove</a>
                 {% else %}
+                  <div class="rp-qf">
+                    <button type="button" class="rp-fill-cap" title="Distribute remaining hours evenly across empty months">Fill</button>
+                    <button type="button" class="rp-copy-fwd" title="Copy first month's value to all following months">Copy →</button>
+                  </div>
                   <a href="#" class="rp-reassign-link" data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}" data-user-name="{{ r.userName }}">move&hellip;</a>
                 {% endif %}
               </td>
@@ -179,7 +239,8 @@ const RP_MONTHS = {{ months | tojson }};
 (function() {
   // ---------- Expand / Collapse ----------
   document.querySelectorAll('.rp-card-header').forEach(header => {
-    header.addEventListener('click', () => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('.rp-bulk-cb')) return;
       header.closest('.rp-card').classList.toggle('collapsed');
     });
   });
@@ -239,17 +300,61 @@ const RP_MONTHS = {{ months | tojson }};
     const capacity = parseFloat(cell.dataset.capacity) || 0;
     const pct = capacity ? (total / capacity) : 0;
 
-    // Update text
     cell.innerHTML = `${total.toFixed(0)}<span style="color:var(--seidor-ink-soft);">/${capacity.toFixed(0)}h</span> <span class="rp-util-pct ${pct > 1 ? 'rp-bar-over' : (pct > 0.85 ? 'rp-bar-warn' : 'rp-bar-ok')}" data-month="${month}" style="margin-left:0.2rem;">${(pct*100).toFixed(0)}%</span>`;
 
-    // Update bar
     const fill = card.querySelector(`.rp-month-bar-fill[data-month="${month}"]`);
     if (fill) {
       fill.style.width = Math.min(pct * 100, 100) + '%';
       fill.classList.remove('rp-bar-ok', 'rp-bar-warn', 'rp-bar-over');
       fill.classList.add(pct > 1 ? 'rp-bar-over' : (pct > 0.85 ? 'rp-bar-warn' : 'rp-bar-ok'));
     }
+    updateOverBadge(card);
+    recomputeCompanyTotals();
   }
+
+  // ---------- Over-capacity badge on card header ----------
+  function updateOverBadge(card) {
+    const badge = card.querySelector('[data-over-badge]');
+    if (!badge) return;
+    let overCount = 0;
+    card.querySelectorAll('.rp-summary-cell').forEach(cell => {
+      const cap = parseFloat(cell.dataset.capacity) || 0;
+      if (!cap) return;
+      const month = cell.dataset.month;
+      const inputs = card.querySelectorAll(`.rp-hours-input[data-month="${month}"]`);
+      let total = 0;
+      inputs.forEach(i => { total += parseFloat(i.value) || 0; });
+      if (total > cap) overCount++;
+    });
+    if (overCount > 0) {
+      badge.textContent = `${overCount} over`;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  document.querySelectorAll('.rp-card').forEach(updateOverBadge);
+
+  // ---------- Company-wide totals bar ----------
+  function recomputeCompanyTotals() {
+    RP_MONTHS.forEach(month => {
+      let total = 0;
+      let capacity = 0;
+      document.querySelectorAll(`.rp-summary-cell[data-month="${month}"]`).forEach(cell => {
+        capacity += parseFloat(cell.dataset.capacity) || 0;
+      });
+      document.querySelectorAll(`.rp-hours-input[data-month="${month}"]`).forEach(input => {
+        total += parseFloat(input.value) || 0;
+      });
+      const el = document.getElementById(`rp-total-${month}`);
+      if (el) {
+        const pct = capacity ? ((total / capacity) * 100).toFixed(0) : 0;
+        const cls = total > capacity ? 'rp-bar-over' : (total / capacity > 0.85 ? 'rp-bar-warn' : 'rp-bar-ok');
+        el.innerHTML = `${total.toFixed(0)}h <span style="color:var(--seidor-ink-soft);">/ ${capacity.toFixed(0)}h</span> <span class="${cls}" style="font-weight:700;">${pct}%</span>`;
+      }
+    });
+  }
+  recomputeCompanyTotals();
 
   // ---------- Auto-save on blur ----------
   document.querySelectorAll('.rp-hours-input').forEach(input => {
@@ -275,6 +380,180 @@ const RP_MONTHS = {{ months | tojson }};
         alert('Could not save — please try again.');
       }
     });
+  });
+
+  // ---------- Quick-fill: Fill capacity ----------
+  document.querySelectorAll('.rp-fill-cap').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      const remaining = parseFloat(row.dataset.remaining) || 0;
+      const inputs = row.querySelectorAll('.rp-hours-input');
+      const emptyInputs = Array.from(inputs).filter(i => (parseFloat(i.value) || 0) === 0);
+      if (!emptyInputs.length || remaining <= 0) return;
+      const perMonth = Math.round((remaining / emptyInputs.length) * 2) / 2;
+      emptyInputs.forEach(i => { i.value = perMonth.toFixed(1); });
+      // trigger blur saves
+      emptyInputs.forEach(i => i.dispatchEvent(new Event('blur')));
+    });
+  });
+
+  // ---------- Quick-fill: Copy forward ----------
+  document.querySelectorAll('.rp-copy-fwd').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      const inputs = Array.from(row.querySelectorAll('.rp-hours-input'));
+      if (!inputs.length) return;
+      const firstVal = inputs[0].value;
+      inputs.slice(1).forEach(i => { i.value = firstVal; });
+      inputs.slice(1).forEach(i => i.dispatchEvent(new Event('blur')));
+    });
+  });
+
+  // ---------- Drag and Drop ----------
+  let dragRow = null;
+  let dragProjectId = null;
+
+  document.querySelectorAll('tr[draggable="true"]').forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      dragRow = row;
+      dragProjectId = row.dataset.projectId;
+      row.classList.add('rp-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.projectId);
+    });
+    row.addEventListener('dragend', () => {
+      if (dragRow) dragRow.classList.remove('rp-dragging');
+      dragRow = null;
+      dragProjectId = null;
+      document.querySelectorAll('.rp-card.drag-over').forEach(c => c.classList.remove('drag-over'));
+    });
+  });
+
+  document.querySelectorAll('.rp-card').forEach(card => {
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (dragRow && dragRow.closest('.rp-card') !== card) {
+        card.classList.add('drag-over');
+      }
+    });
+    card.addEventListener('dragleave', (e) => {
+      if (!card.contains(e.relatedTarget)) {
+        card.classList.remove('drag-over');
+      }
+    });
+    card.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      if (!dragRow) return;
+      const sourceCard = dragRow.closest('.rp-card');
+      if (sourceCard === card) return;
+
+      const projectId = parseInt(dragRow.dataset.projectId, 10);
+      const targetUserId = parseInt(card.dataset.userId, 10);
+      const targetUserName = card.querySelector('.rp-card-name').textContent.trim();
+
+      try {
+        const resp = await fetch('/api/resource-planning/reassign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: projectId, user_id: targetUserId, user_name: targetUserName }),
+        });
+        if (!resp.ok) throw new Error('Reassign failed');
+        try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (ex) {}
+        window.location.reload();
+      } catch (err) {
+        alert('Could not move — please try again.');
+      }
+    });
+  });
+
+  // ---------- Bulk selection ----------
+  const bulkBar = document.getElementById('rp-bulk-bar');
+  const bulkCount = document.getElementById('rp-bulk-count');
+
+  function getSelectedRows() {
+    return Array.from(document.querySelectorAll('.rp-row-cb:checked')).map(cb => cb.closest('tr'));
+  }
+
+  function updateBulkBar() {
+    const sel = getSelectedRows();
+    if (sel.length > 0) {
+      bulkBar.classList.add('visible');
+      bulkCount.textContent = sel.length;
+    } else {
+      bulkBar.classList.remove('visible');
+    }
+  }
+
+  document.querySelectorAll('.rp-row-cb').forEach(cb => {
+    cb.addEventListener('change', updateBulkBar);
+    cb.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  // Select-all per card
+  document.querySelectorAll('.rp-card-select-all').forEach(cb => {
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const tbody = cb.closest('table').querySelector('tbody');
+      tbody.querySelectorAll('.rp-row-cb').forEach(rcb => { rcb.checked = cb.checked; });
+      updateBulkBar();
+    });
+  });
+
+  // Bulk deselect
+  document.getElementById('rp-bulk-deselect').addEventListener('click', () => {
+    document.querySelectorAll('.rp-row-cb:checked, .rp-card-select-all:checked').forEach(cb => { cb.checked = false; });
+    updateBulkBar();
+  });
+
+  // Bulk zero
+  document.getElementById('rp-bulk-zero').addEventListener('click', () => {
+    const rows = getSelectedRows();
+    if (!rows.length) return;
+    if (!confirm(`Zero all hours for ${rows.length} selected row(s)?`)) return;
+    rows.forEach(row => {
+      row.querySelectorAll('.rp-hours-input').forEach(input => {
+        input.value = '0.0';
+        input.dispatchEvent(new Event('blur'));
+      });
+    });
+    document.querySelectorAll('.rp-row-cb:checked').forEach(cb => { cb.checked = false; });
+    updateBulkBar();
+  });
+
+  // Bulk move
+  document.getElementById('rp-bulk-move').addEventListener('click', async () => {
+    const rows = getSelectedRows();
+    if (!rows.length) return;
+
+    const names = RP_ROSTER.map(c => c.name).sort();
+    const picked = prompt(`Move ${rows.length} selected row(s) to which consultant?\n\n${names.map((n, i) => `${i+1}. ${n}`).join('\n')}\n\nType the number:`);
+    if (!picked) return;
+    const idx = parseInt(picked, 10) - 1;
+    const sorted = RP_ROSTER.slice().sort((a,b) => a.name.localeCompare(b.name));
+    if (isNaN(idx) || idx < 0 || idx >= sorted.length) { alert('Invalid selection.'); return; }
+    const target = sorted[idx];
+
+    for (const row of rows) {
+      const projectId = parseInt(row.dataset.projectId, 10);
+      try {
+        const resp = await fetch('/api/resource-planning/reassign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: projectId, user_id: target.id, user_name: target.name }),
+        });
+        if (!resp.ok) throw new Error('Reassign failed for project ' + projectId);
+      } catch (err) {
+        alert(err.message);
+        break;
+      }
+    }
+    window.location.reload();
   });
 
   // ---------- Save All ----------
@@ -357,7 +636,7 @@ const RP_MONTHS = {{ months | tojson }};
     });
   }
 
-  // ---------- Move (reassign) a project to another consultant ----------
+  // ---------- Move (reassign) via link ----------
   document.querySelectorAll('.rp-reassign-link').forEach(link => {
     link.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -381,7 +660,7 @@ const RP_MONTHS = {{ months | tojson }};
           body: JSON.stringify({ project_id: projectId, user_id: target.id, user_name: target.name }),
         });
         if (!resp.ok) throw new Error('Reassign failed');
-        try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (e) {}
+        try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (ex) {}
         window.location.reload();
       } catch (err) {
         link.textContent = 'move…';
@@ -416,12 +695,11 @@ const RP_MONTHS = {{ months | tojson }};
   document.querySelectorAll('.rp-add-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const addRow = btn.closest('.rp-add-row');
-      if (addRow.querySelector('.rp-add-form')) return; // already open
+      if (addRow.querySelector('.rp-add-form')) return;
 
       const userId = parseInt(btn.dataset.userId, 10);
       const userName = btn.dataset.userName;
 
-      // Collect projects already assigned to other consultants that could be split
       const allProjectIds = new Set();
       document.querySelectorAll('tr[data-project-id]').forEach(tr => {
         allProjectIds.add(tr.dataset.projectId + '|' + tr.dataset.projectName);
@@ -462,7 +740,7 @@ const RP_MONTHS = {{ months | tojson }};
             body: JSON.stringify({ project_id: projectId, user_id: userId, user_name: userName, monthly }),
           });
           if (!resp.ok) throw new Error((await resp.json()).detail || 'Failed');
-          try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (e) {}
+          try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (ex) {}
           window.location.reload();
         } catch (err) {
           alert(err.message || 'Could not add project.');
