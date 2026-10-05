@@ -2,184 +2,282 @@
 {% block title %}Resource Planning &mdash; ERM{% endblock %}
 {% block content %}
 <style>
-  #rp-scope { max-width: 1400px; margin: 0 auto; padding: 0 1rem 2rem; }
-  #rp-scope table.rp-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  #rp-scope table.rp-table th, #rp-scope table.rp-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--seidor-border); text-align: right; white-space: nowrap; }
-  #rp-scope table.rp-table th:first-child, #rp-scope table.rp-table td:first-child,
-  #rp-scope table.rp-table th:nth-child(2), #rp-scope table.rp-table td:nth-child(2) { text-align: left; white-space: normal; }
-  #rp-scope table.rp-table thead th { background: var(--seidor-bg); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--seidor-ink-soft); }
-  #rp-scope table.rp-table tbody tr:hover td { background: #f8faff; }
-  #rp-scope .rp-hours-input { width: 5.5rem; padding: 0.3rem 0.4rem; font-size: 0.85rem; text-align: right; }
-  #rp-scope .rp-util-ok { color: #1a7f37; }
-  #rp-scope .rp-util-warn { color: #b8792e; }
-  #rp-scope .rp-util-over { color: #a4262c; font-weight: 600; }
-  #rp-scope .rp-hint { color: var(--seidor-ink-soft); font-size: 0.85rem; }
-  #rp-scope .rp-toolbar { display: flex; gap: 1rem; align-items: end; margin: 1rem 0; flex-wrap: wrap; }
-  #rp-scope .rp-field label { display: block; font-size: 0.75rem; color: var(--seidor-ink-soft); margin-bottom: 0.2rem; }
-  #rp-scope .rp-btn { background:linear-gradient(135deg, var(--seidor-blue), #1f4fb0); color:#fff; border:none; border-radius:8px; padding:0.55rem 1.1rem; font-size:0.85rem; font-weight:600; cursor:pointer; box-shadow:0 4px 12px -4px var(--seidor-accent-soft, rgba(47,47,140,0.12)); }
-  #rp-scope .rp-btn:hover { filter:brightness(1.05); }
-  #rp-scope .rp-btn:disabled { opacity:0.6; cursor:default; }
-  #rp-scope .rp-consultant-cell { min-width: 10rem; }
-  #rp-scope .rp-split-form { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; }
-  #rp-scope .rp-split-form select, #rp-scope .rp-split-form input { font-size: 0.8rem; padding: 0.2rem; }
-  #rp-scope .rp-split-form button { font-size: 0.75rem; padding: 0.2rem 0.5rem; cursor: pointer; }
-  #rp-scope tr.rp-just-split { animation: rp-flash 2.5s ease-out; }
+  #rp-scope { max-width: 1500px; margin: 0 auto; padding: 0 1rem 2rem; }
+  #rp-scope h1 { margin-bottom: 0.3rem; }
+
+  /* toolbar */
+  .rp-toolbar { display: flex; gap: 1rem; align-items: end; margin: 1rem 0; flex-wrap: wrap; }
+  .rp-field label { display: block; font-size: 0.75rem; color: var(--seidor-ink-soft); margin-bottom: 0.2rem; }
+  .rp-btn { background:linear-gradient(135deg, var(--seidor-blue), #1f4fb0); color:#fff; border:none; border-radius:8px; padding:0.55rem 1.1rem; font-size:0.85rem; font-weight:600; cursor:pointer; box-shadow:0 4px 12px -4px var(--seidor-accent-soft, rgba(47,47,140,0.12)); }
+  .rp-btn:hover { filter:brightness(1.05); }
+  .rp-btn:disabled { opacity:0.6; cursor:default; }
+  .rp-btn-secondary { background: #fff; color: var(--seidor-blue); border: 1.5px solid var(--seidor-blue); box-shadow: none; }
+  .rp-btn-secondary:hover { background: #f0f4ff; filter: none; }
+  .rp-hint { color: var(--seidor-ink-soft); font-size: 0.85rem; }
+
+  /* consultant card */
+  .rp-card { border: 1px solid var(--seidor-border); border-radius: 10px; margin-bottom: 0.75rem; overflow: hidden; background: #fff; }
+  .rp-card.collapsed .rp-card-body { display: none; }
+  .rp-card-header { display: flex; align-items: center; gap: 1rem; padding: 0.7rem 1rem; cursor: pointer; user-select: none; background: var(--seidor-bg); transition: background 0.15s; }
+  .rp-card-header:hover { background: #eef2f8; }
+  .rp-card-chevron { font-size: 0.7rem; color: var(--seidor-ink-soft); transition: transform 0.2s; width: 1rem; text-align: center; flex-shrink: 0; }
+  .rp-card.collapsed .rp-card-chevron { transform: rotate(-90deg); }
+  .rp-card-name { font-weight: 600; font-size: 0.95rem; min-width: 12rem; }
+  .rp-card-bars { display: flex; gap: 0.5rem; flex: 1; align-items: center; flex-wrap: wrap; }
+  .rp-month-bar-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; min-width: 7rem; }
+  .rp-month-bar-label { font-size: 0.65rem; color: var(--seidor-ink-soft); text-transform: uppercase; letter-spacing: 0.05em; }
+  .rp-month-bar-track { width: 100%; height: 6px; background: #e8ecf1; border-radius: 3px; overflow: hidden; }
+  .rp-month-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s, background 0.3s; }
+  .rp-bar-ok { background: #1a7f37; }
+  .rp-bar-warn { background: #b8792e; }
+  .rp-bar-over { background: #a4262c; }
+  .rp-month-bar-text { font-size: 0.7rem; font-weight: 500; }
+  .rp-card-projects { font-size: 0.75rem; color: var(--seidor-ink-soft); white-space: nowrap; }
+
+  /* project table inside card */
+  .rp-card-body { padding: 0; }
+  table.rp-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.rp-table th, table.rp-table td { padding: 0.5rem 0.6rem; border-top: 1px solid #f0f2f5; text-align: right; white-space: nowrap; }
+  table.rp-table th:first-child, table.rp-table td:first-child { text-align: left; white-space: normal; }
+  table.rp-table thead th { background: #fafbfd; font-weight: 600; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--seidor-ink-soft); border-top: none; }
+  table.rp-table tbody tr:hover td { background: #f8faff; }
+  .rp-hours-input { width: 5rem; padding: 0.25rem 0.35rem; font-size: 0.85rem; text-align: right; border: 1px solid #dde3e8; border-radius: 4px; }
+  .rp-hours-input:focus { border-color: var(--seidor-blue); outline: none; box-shadow: 0 0 0 2px rgba(47,47,140,0.12); }
+  .rp-project-name { font-weight: 500; }
+  .rp-rapport { color: var(--seidor-ink-soft); font-size: 0.78rem; }
+  .rp-remaining { color: var(--seidor-ink-soft); font-size: 0.82rem; }
+  .rp-row-actions { font-size: 0.78rem; }
+  .rp-row-actions a { color: var(--seidor-blue); text-decoration: none; }
+  .rp-row-actions a:hover { text-decoration: underline; }
+  .rp-extra-badge { font-size: 0.68rem; background: #eef2f8; color: var(--seidor-blue); padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: 500; }
+
+  /* add project row */
+  .rp-add-row { padding: 0.5rem 1rem; border-top: 1px solid #f0f2f5; }
+  .rp-add-btn { font-size: 0.8rem; color: var(--seidor-blue); background: none; border: none; cursor: pointer; padding: 0.3rem 0; font-weight: 500; }
+  .rp-add-btn:hover { text-decoration: underline; }
+  .rp-add-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .rp-add-form select { font-size: 0.82rem; padding: 0.3rem; border: 1px solid #dde3e8; border-radius: 4px; max-width: 22rem; }
+  .rp-add-form button { font-size: 0.78rem; padding: 0.3rem 0.7rem; cursor: pointer; }
+
+  /* flash animation */
+  tr.rp-just-split { animation: rp-flash 2.5s ease-out; }
   @keyframes rp-flash { from { background: #fff3cd; } to { background: transparent; } }
+
+  /* expand/collapse all */
+  .rp-toggle-all { font-size: 0.82rem; color: var(--seidor-blue); background: none; border: none; cursor: pointer; font-weight: 500; }
+  .rp-toggle-all:hover { text-decoration: underline; }
 </style>
 <div id="rp-scope">
   <h1>Resource Planning</h1>
   <p class="rp-hint">
-    Rolling 6-month plan ({{ month_labels|join(' / ') }}) &mdash; planned hours per consultant per project, auto-filled from each
-    project's remaining estimated hours (Estimated &minus; Spent), defaulted onto whoever logged that project's most recent
-    time entry and spread across whichever of these months that person still has free capacity in (spilling into later months
-    rather than piling everything onto one month). Every cell below is editable and saves automatically on blur; capacity is a
-    flat 8 hours &times; weekdays per month (no holiday calendar).
+    Rolling 6-month plan ({{ month_labels|join(' / ') }}) &mdash; planned hours per consultant per project.
+    Each consultant card shows their capacity utilization. Click to expand and edit project hours.
+    Cells auto-save on blur.
     {% if fetched_on %}Based on the Redmine data cached as of <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on }}"></span>.{% endif %}
   </p>
 
-  <h1 style="margin-top:1.5rem;">Capacity &amp; utilization by consultant</h1>
-  <div style="overflow-x:auto;">
-    <table class="rp-table">
-      <thead>
-        <tr>
-          <th>Consultant</th>
-          {% for label in month_labels %}<th colspan="1">{{ label }}</th>{% endfor %}
-        </tr>
-      </thead>
-      <tbody id="rp-summary-tbody">
-        {% for entry in summary %}
-        <tr data-user-id="{{ entry.userId }}">
-          <td>{{ entry.userName }}</td>
-          {% for month in months %}
-          <td>
-            <span class="rp-summary-cell" data-month="{{ month }}" data-capacity="{{ entry.capacity[month] }}">{{ "%.0f"|format(entry.monthly[month]) }}</span>
-            / {{ "%.0f"|format(entry.capacity[month]) }}h
-            (<span class="rp-util-cell {{ 'rp-util-over' if entry.utilization[month] > 1 else ('rp-util-warn' if entry.utilization[month] > 0.85 else 'rp-util-ok') }}" data-month="{{ month }}">{{ "%.0f"|format(entry.utilization[month] * 100) }}%</span>)
-          </td>
-          {% endfor %}
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ months|length + 1 }}">No planned hours yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <h1 style="margin-top:2rem;">Planned hours by project</h1>
   <div class="rp-toolbar">
     <div class="rp-field">
       <label for="rp-search">Search</label>
-      <input type="text" id="rp-search" placeholder="Filter by consultant or project&hellip;">
+      <input type="text" id="rp-search" placeholder="Filter by consultant or project&hellip;" style="min-width:16rem;">
     </div>
-    <button class="rp-btn" id="rp-save-btn" type="button">Save</button>
+    <button class="rp-btn" id="rp-save-btn" type="button">Save all</button>
     <span class="rp-hint" id="rp-save-progress" hidden>Saving&hellip;</span>
-    <button class="rp-btn" id="rp-export-btn" type="button">Export to Excel</button>
+    <button class="rp-btn rp-btn-secondary" id="rp-export-btn" type="button">Export to Excel</button>
     <span class="rp-hint" id="rp-export-progress" hidden>Generating&hellip;</span>
+    <button class="rp-toggle-all" id="rp-expand-all" type="button">Expand all</button>
+    <button class="rp-toggle-all" id="rp-collapse-all" type="button">Collapse all</button>
+    <span class="rp-hint" id="rp-count-hint"></span>
   </div>
-  <p class="rp-hint" id="rp-count-hint"></p>
-  <div style="overflow-x:auto;">
-    <table class="rp-table">
-      <thead>
-        <tr>
-          <th>Consultant</th>
-          <th>Project</th>
-          <th>Remaining est. hrs</th>
-          {% for label in month_labels %}<th>{{ label }}</th>{% endfor %}
-        </tr>
-      </thead>
-      <tbody id="rp-detail-tbody">
-        {% for r in rows %}
-        <tr data-search="{{ (r.userName ~ ' ' ~ r.projectName)|lower }}" data-project-id="{{ r.projectId }}" data-project-name="{{ r.projectName }}"
-            data-remaining="{{ r.remaining }}" data-is-extra-row="{{ 'true' if r.isExtraRow else 'false' }}">
-          <td>
-            <div class="rp-consultant-cell" data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}" data-user-name="{{ r.userName }}"
-                 data-is-extra-row="{{ 'true' if r.isExtraRow else 'false' }}">
-              <select class="rp-consultant-select">
-                {% for c in roster %}
-                <option value="{{ c.id }}" data-name="{{ c.name }}" {{ 'selected' if c.id == r.userId else '' }}>{{ c.name }}</option>
-                {% endfor %}
-                {% if r.userId not in roster|map(attribute='id')|list %}
-                <option value="{{ r.userId }}" data-name="{{ r.userName }}" selected>{{ r.userName }}</option>
-                {% endif %}
-              </select>
-              <div class="rp-hint">
-                {% if r.reassigned %}reassigned{% endif %}
-                {% if r.isSplit and not r.isExtraRow %}split{% endif %}
-              </div>
-              <div>
-                {% if r.isExtraRow %}
-                  <a href="#" class="rp-split-remove-link">remove this row</a>
-                {% else %}
-                  <a href="#" class="rp-split-link">split&hellip;</a>
-                {% endif %}
-              </div>
-            </div>
-          </td>
-          <td>{{ r.projectName }}{% if r.rapportCode %}<br><span class="rp-hint">{{ r.rapportCode }}</span>{% endif %}</td>
-          <td>{{ "%.0f"|format(r.remaining) }}</td>
+
+  <div id="rp-cards">
+    {% for s in summary %}
+    <div class="rp-card collapsed" data-user-id="{{ s.userId }}" data-user-name="{{ s.userName|lower }}">
+      <div class="rp-card-header" title="Click to expand">
+        <span class="rp-card-chevron">&#9660;</span>
+        <span class="rp-card-name">{{ s.userName }}</span>
+        <div class="rp-card-bars">
           {% for month in months %}
-          <td>
-            <input type="number" step="0.5" min="0" class="rp-hours-input"
-                   data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}" data-month="{{ month }}"
-                   value="{{ '%.1f'|format(r.monthly[month]) }}">
-          </td>
+          <div class="rp-month-bar-wrap" data-month="{{ month }}">
+            <span class="rp-month-bar-label">{{ month_labels[loop.index0][:3] }}</span>
+            <div class="rp-month-bar-track">
+              <div class="rp-month-bar-fill {{ 'rp-bar-over' if s.utilization[month] > 1 else ('rp-bar-warn' if s.utilization[month] > 0.85 else 'rp-bar-ok') }}"
+                   style="width: {{ [s.utilization[month] * 100, 100] | min }}%;"
+                   data-month="{{ month }}"></div>
+            </div>
+            <span class="rp-month-bar-text rp-summary-cell" data-month="{{ month }}" data-capacity="{{ s.capacity[month] }}">
+              {{ "%.0f"|format(s.monthly[month]) }}<span style="color:var(--seidor-ink-soft);">/{{ "%.0f"|format(s.capacity[month]) }}h</span>
+              <span class="rp-util-pct {{ 'rp-bar-over' if s.utilization[month] > 1 else ('rp-bar-warn' if s.utilization[month] > 0.85 else 'rp-bar-ok') }}"
+                    data-month="{{ month }}" style="margin-left:0.2rem;">{{ "%.0f"|format(s.utilization[month] * 100) }}%</span>
+            </span>
+          </div>
           {% endfor %}
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ months|length + 3 }}">No projects with remaining estimated hours and a known consultant.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </div>
+        <span class="rp-card-projects">
+          {% set project_count = rows | selectattr("userId", "equalto", s.userId) | list | length %}
+          {{ project_count }} project{{ 's' if project_count != 1 else '' }}
+        </span>
+      </div>
+      <div class="rp-card-body">
+        <table class="rp-table">
+          <thead>
+            <tr>
+              <th style="min-width:14rem;">Project</th>
+              <th>Remaining</th>
+              {% for label in month_labels %}<th>{{ label }}</th>{% endfor %}
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows if r.userId == s.userId %}
+            <tr data-search="{{ (r.userName ~ ' ' ~ r.projectName)|lower }}" data-project-id="{{ r.projectId }}" data-project-name="{{ r.projectName }}"
+                data-remaining="{{ r.remaining }}" data-is-extra-row="{{ 'true' if r.isExtraRow else 'false' }}"
+                data-user-id="{{ r.userId }}">
+              <td>
+                <span class="rp-project-name">{{ r.projectName }}</span>
+                {% if r.rapportCode %}<br><span class="rp-rapport">{{ r.rapportCode }}</span>{% endif %}
+                {% if r.isExtraRow %} <span class="rp-extra-badge">split</span>{% endif %}
+                {% if r.reassigned %} <span class="rp-extra-badge">reassigned</span>{% endif %}
+              </td>
+              <td><span class="rp-remaining">{{ "%.0f"|format(r.remaining) }}h</span></td>
+              {% for month in months %}
+              <td>
+                <input type="number" step="0.5" min="0" class="rp-hours-input"
+                       data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}" data-month="{{ month }}"
+                       value="{{ '%.1f'|format(r.monthly[month]) }}">
+              </td>
+              {% endfor %}
+              <td class="rp-row-actions">
+                {% if r.isExtraRow %}
+                  <a href="#" class="rp-remove-link" data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}">remove</a>
+                {% else %}
+                  <a href="#" class="rp-reassign-link" data-project-id="{{ r.projectId }}" data-user-id="{{ r.userId }}" data-user-name="{{ r.userName }}">move&hellip;</a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="rp-add-row">
+          <button class="rp-add-btn" data-user-id="{{ s.userId }}" data-user-name="{{ s.userName }}" type="button">+ Add project</button>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <p class="rp-hint">No projects with remaining estimated hours and a known consultant.</p>
+    {% endfor %}
   </div>
 </div>
 
+<!-- Roster + all projects data for the add/move dialogs -->
+<script>
+const RP_ROSTER = {{ roster | tojson }};
+const RP_MONTHS = {{ months | tojson }};
+</script>
+
 <script>
 (function() {
-  const detailTbody = document.getElementById('rp-detail-tbody');
+  // ---------- Expand / Collapse ----------
+  document.querySelectorAll('.rp-card-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.closest('.rp-card').classList.toggle('collapsed');
+    });
+  });
+  document.getElementById('rp-expand-all').addEventListener('click', () => {
+    document.querySelectorAll('.rp-card').forEach(c => c.classList.remove('collapsed'));
+  });
+  document.getElementById('rp-collapse-all').addEventListener('click', () => {
+    document.querySelectorAll('.rp-card').forEach(c => c.classList.add('collapsed'));
+  });
+
+  // ---------- Search ----------
   const search = document.getElementById('rp-search');
   const countHint = document.getElementById('rp-count-hint');
+  const cards = Array.from(document.querySelectorAll('.rp-card'));
 
-  if (detailTbody) {
-    const detailRows = Array.from(detailTbody.querySelectorAll('tr[data-search]'));
-    const applyFilter = () => {
-      const term = (search.value || '').trim().toLowerCase();
-      let visible = 0;
-      detailRows.forEach(row => {
-        const show = !term || row.dataset.search.includes(term);
-        row.hidden = !show;
-        if (show) visible++;
+  function applyFilter() {
+    const term = (search.value || '').trim().toLowerCase();
+    let visibleCards = 0;
+    cards.forEach(card => {
+      if (!term) {
+        card.hidden = false;
+        card.querySelectorAll('tbody tr').forEach(tr => { tr.hidden = false; });
+        visibleCards++;
+        return;
+      }
+      const userName = card.dataset.userName || '';
+      const matchesConsultant = userName.includes(term);
+      let hasVisibleRow = false;
+      card.querySelectorAll('tbody tr').forEach(tr => {
+        const matchesRow = (tr.dataset.search || '').includes(term);
+        tr.hidden = !matchesConsultant && !matchesRow;
+        if (!tr.hidden) hasVisibleRow = true;
       });
-      if (countHint) countHint.textContent = `Showing ${visible} of ${detailRows.length} project assignments`;
-    };
-    search.addEventListener('input', applyFilter);
-    applyFilter();
+      card.hidden = !matchesConsultant && !hasVisibleRow;
+      if (!card.hidden) {
+        visibleCards++;
+        if (term) card.classList.remove('collapsed');
+      }
+    });
+    countHint.textContent = `Showing ${visibleCards} of ${cards.length} consultants`;
   }
+  search.addEventListener('input', applyFilter);
+  applyFilter();
 
-  function recomputeSummaryForUser(userId, month) {
+  // ---------- Recompute summary bar for a consultant ----------
+  function recomputeSummary(userId, month) {
     const inputs = document.querySelectorAll(
       `.rp-hours-input[data-user-id="${userId}"][data-month="${month}"]`
     );
     let total = 0;
     inputs.forEach(i => { total += parseFloat(i.value) || 0; });
 
-    const summaryRow = document.querySelector(`#rp-summary-tbody tr[data-user-id="${userId}"]`);
-    if (!summaryRow) return;
-    const cell = summaryRow.querySelector(`.rp-summary-cell[data-month="${month}"]`);
-    const utilCell = summaryRow.querySelector(`.rp-util-cell[data-month="${month}"]`);
-    if (!cell || !utilCell) return;
-
-    cell.textContent = total.toFixed(0);
+    const card = document.querySelector(`.rp-card[data-user-id="${userId}"]`);
+    if (!card) return;
+    const cell = card.querySelector(`.rp-summary-cell[data-month="${month}"]`);
+    if (!cell) return;
     const capacity = parseFloat(cell.dataset.capacity) || 0;
-    const pct = capacity ? (total / capacity * 100) : 0;
-    utilCell.textContent = pct.toFixed(0) + '%';
-    utilCell.classList.remove('rp-util-ok', 'rp-util-warn', 'rp-util-over');
-    utilCell.classList.add(pct > 100 ? 'rp-util-over' : (pct > 85 ? 'rp-util-warn' : 'rp-util-ok'));
+    const pct = capacity ? (total / capacity) : 0;
+
+    // Update text
+    cell.innerHTML = `${total.toFixed(0)}<span style="color:var(--seidor-ink-soft);">/${capacity.toFixed(0)}h</span> <span class="rp-util-pct ${pct > 1 ? 'rp-bar-over' : (pct > 0.85 ? 'rp-bar-warn' : 'rp-bar-ok')}" data-month="${month}" style="margin-left:0.2rem;">${(pct*100).toFixed(0)}%</span>`;
+
+    // Update bar
+    const fill = card.querySelector(`.rp-month-bar-fill[data-month="${month}"]`);
+    if (fill) {
+      fill.style.width = Math.min(pct * 100, 100) + '%';
+      fill.classList.remove('rp-bar-ok', 'rp-bar-warn', 'rp-bar-over');
+      fill.classList.add(pct > 1 ? 'rp-bar-over' : (pct > 0.85 ? 'rp-bar-warn' : 'rp-bar-ok'));
+    }
   }
 
-  // ---------- Save: persist every cell on screen, then warn about any
-  // project whose total planned hours (summed across every one of its
-  // rows/consultants, across all months) exceed its remaining estimated
-  // hours ----------
+  // ---------- Auto-save on blur ----------
+  document.querySelectorAll('.rp-hours-input').forEach(input => {
+    let lastSaved = input.value;
+    input.addEventListener('blur', async () => {
+      if (input.value === lastSaved) return;
+      const hours = parseFloat(input.value);
+      if (isNaN(hours) || hours < 0) { input.value = lastSaved; return; }
+      const projectId = parseInt(input.dataset.projectId, 10);
+      const userId = parseInt(input.dataset.userId, 10);
+      const month = input.dataset.month;
+      try {
+        const resp = await fetch('/api/resource-planning/cell', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: projectId, user_id: userId, month: month, hours: hours }),
+        });
+        if (!resp.ok) throw new Error('Save failed');
+        lastSaved = input.value;
+        recomputeSummary(userId, month);
+      } catch (e) {
+        input.value = lastSaved;
+        alert('Could not save — please try again.');
+      }
+    });
+  });
+
+  // ---------- Save All ----------
   const saveBtn = document.getElementById('rp-save-btn');
   const saveProgress = document.getElementById('rp-save-progress');
   if (saveBtn) {
@@ -200,36 +298,30 @@
         });
         if (!resp.ok) throw new Error((await resp.json()).detail || 'Save failed');
 
-        // Total planned hours per project, across every row for it
-        // (a split project has more than one) — compared against the
-        // remaining-estimated-hours figure every one of its rows carries.
         const totalsByProject = {};
         const remainingByProject = {};
-        document.querySelectorAll('#rp-detail-tbody tr[data-project-id]').forEach(row => {
+        document.querySelectorAll('tr[data-project-id]').forEach(row => {
           const projectId = row.dataset.projectId;
           remainingByProject[projectId] = parseFloat(row.dataset.remaining) || 0;
           let rowTotal = 0;
           row.querySelectorAll('.rp-hours-input').forEach(input => { rowTotal += parseFloat(input.value) || 0; });
           totalsByProject[projectId] = (totalsByProject[projectId] || 0) + rowTotal;
         });
-
         const overBudget = [];
         for (const projectId in totalsByProject) {
-          const total = totalsByProject[projectId];
-          const remaining = remainingByProject[projectId];
-          if (total > remaining + 0.05) {
-            const row = document.querySelector(`#rp-detail-tbody tr[data-project-id="${projectId}"]`);
-            overBudget.push(`${row.dataset.projectName.trim()}: planned ${total.toFixed(1)}h vs ${remaining.toFixed(1)}h remaining estimated (over by ${(total - remaining).toFixed(1)}h)`);
+          if (totalsByProject[projectId] > remainingByProject[projectId] + 0.05) {
+            const row = document.querySelector(`tr[data-project-id="${projectId}"]`);
+            const name = row.dataset.projectName.trim();
+            overBudget.push(`${name}: ${totalsByProject[projectId].toFixed(1)}h planned vs ${remainingByProject[projectId].toFixed(1)}h remaining`);
           }
         }
-
-        saveBtn.textContent = 'Saved';
-        setTimeout(() => { saveBtn.textContent = 'Save'; }, 2000);
+        saveBtn.textContent = 'Saved ✓';
+        setTimeout(() => { saveBtn.textContent = 'Save all'; }, 2000);
         if (overBudget.length) {
-          alert(`Saved — but ${overBudget.length} project(s) now exceed their remaining estimated hours:\n\n${overBudget.join('\n')}`);
+          alert(`Saved — but ${overBudget.length} project(s) exceed remaining hours:\n\n${overBudget.join('\n')}`);
         }
       } catch (e) {
-        alert(e.message || 'Could not save — please try again.');
+        alert(e.message || 'Could not save.');
       } finally {
         saveBtn.disabled = false;
         if (saveProgress) saveProgress.hidden = true;
@@ -237,6 +329,7 @@
     });
   }
 
+  // ---------- Export ----------
   const exportBtn = document.getElementById('rp-export-btn');
   const exportProgress = document.getElementById('rp-export-progress');
   if (exportBtn) {
@@ -264,57 +357,46 @@
     });
   }
 
-  // Reads whatever's currently in a row's hour inputs (not necessarily
-  // saved yet, but always what's on screen) — used both to duplicate a
-  // row on Split and to know what to carry over when reassigning it.
-  function currentMonthlyValues(row) {
-    const monthly = {};
-    row.querySelectorAll('.rp-hours-input').forEach(input => {
-      monthly[input.dataset.month] = parseFloat(input.value) || 0;
-    });
-    return monthly;
-  }
-
-  // ---------- Split: duplicate a row for a second consultant ----------
-  document.querySelectorAll('.rp-split-link').forEach(link => {
+  // ---------- Move (reassign) a project to another consultant ----------
+  document.querySelectorAll('.rp-reassign-link').forEach(link => {
     link.addEventListener('click', async (e) => {
       e.preventDefault();
-      const cell = link.closest('.rp-consultant-cell');
+      e.stopPropagation();
+      const projectId = parseInt(link.dataset.projectId, 10);
       const row = link.closest('tr');
-      const projectId = parseInt(cell.dataset.projectId, 10);
-      const currentUserId = parseInt(cell.dataset.userId, 10);
+      const projectName = row.dataset.projectName;
 
-      // Defaults the new row onto the SAME consultant as the row it was
-      // split from — it lands directly below (same consultant + same
-      // project sorts identically, and this row is inserted after the
-      // original in build_plan) — its dropdown is then immediately
-      // editable to pick who it should actually be.
-      link.textContent = 'splitting…';
+      const names = RP_ROSTER.map(c => c.name).sort();
+      const picked = prompt(`Move "${projectName}" to which consultant?\n\n${names.map((n, i) => `${i+1}. ${n}`).join('\n')}\n\nType the number:`);
+      if (!picked) return;
+      const idx = parseInt(picked, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= RP_ROSTER.length) { alert('Invalid selection.'); return; }
+      const target = RP_ROSTER.sort((a,b) => a.name.localeCompare(b.name))[idx];
+
+      link.textContent = 'moving…';
       try {
-        const resp = await fetch('/api/resource-planning/split', {
+        const resp = await fetch('/api/resource-planning/reassign', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: projectId, user_id: currentUserId, user_name: cell.dataset.userName,
-            monthly: currentMonthlyValues(row),
-          }),
+          body: JSON.stringify({ project_id: projectId, user_id: target.id, user_name: target.name }),
         });
-        if (!resp.ok) throw new Error((await resp.json()).detail || 'Split failed');
-        try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (e) { /* ignore */ }
+        if (!resp.ok) throw new Error('Reassign failed');
+        try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (e) {}
         window.location.reload();
       } catch (err) {
-        link.textContent = 'split…';
-        alert(err.message || 'Could not split that project — please try again.');
+        link.textContent = 'move…';
+        alert('Could not move — please try again.');
       }
     });
   });
 
-  document.querySelectorAll('.rp-split-remove-link').forEach(link => {
+  // ---------- Remove split row ----------
+  document.querySelectorAll('.rp-remove-link').forEach(link => {
     link.addEventListener('click', async (e) => {
       e.preventDefault();
-      const cell = link.closest('.rp-consultant-cell');
-      const projectId = parseInt(cell.dataset.projectId, 10);
-      const userId = parseInt(cell.dataset.userId, 10);
+      e.stopPropagation();
+      const projectId = parseInt(link.dataset.projectId, 10);
+      const userId = parseInt(link.dataset.userId, 10);
       if (!confirm('Remove this split row? Its hours will be deleted.')) return;
       try {
         const resp = await fetch('/api/resource-planning/split/remove', {
@@ -322,102 +404,87 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project_id: projectId, user_id: userId }),
         });
-        if (!resp.ok) throw new Error('Could not remove that row.');
+        if (!resp.ok) throw new Error('Could not remove.');
         window.location.reload();
       } catch (err) {
-        alert(err.message || 'Could not remove that row — please try again.');
+        alert(err.message || 'Could not remove.');
       }
     });
   });
 
-  // ---------- Reassign a row to a different consultant ----------
-  document.querySelectorAll('.rp-consultant-select').forEach(select => {
-    select.addEventListener('change', async () => {
-      const cell = select.closest('.rp-consultant-cell');
-      const row = select.closest('tr');
-      const projectId = parseInt(cell.dataset.projectId, 10);
-      const isExtraRow = cell.dataset.isExtraRow === 'true';
-      const oldUserId = parseInt(cell.dataset.userId, 10);
-      const option = select.options[select.selectedIndex];
-      const newUserId = parseInt(option.value, 10);
-      const newUserName = option.dataset.name;
-      select.disabled = true;
-      try {
-        if (isExtraRow) {
-          // A split row has no single "assignee" override to update —
-          // move it by re-creating it under the new consultant (with
-          // whatever's currently on screen) and dropping the old one.
-          const monthly = currentMonthlyValues(row);
-          const addResp = await fetch('/api/resource-planning/split', {
+  // ---------- Add project (split) to a consultant ----------
+  document.querySelectorAll('.rp-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const addRow = btn.closest('.rp-add-row');
+      if (addRow.querySelector('.rp-add-form')) return; // already open
+
+      const userId = parseInt(btn.dataset.userId, 10);
+      const userName = btn.dataset.userName;
+
+      // Collect projects already assigned to other consultants that could be split
+      const allProjectIds = new Set();
+      document.querySelectorAll('tr[data-project-id]').forEach(tr => {
+        allProjectIds.add(tr.dataset.projectId + '|' + tr.dataset.projectName);
+      });
+      const projects = [...allProjectIds].map(s => {
+        const [id, name] = [s.split('|')[0], s.substring(s.indexOf('|')+1)];
+        return { id: parseInt(id, 10), name };
+      }).sort((a, b) => a.name.localeCompare(b.name));
+
+      const form = document.createElement('div');
+      form.className = 'rp-add-form';
+      form.innerHTML = `
+        <select class="rp-add-select">
+          <option value="">Select a project&hellip;</option>
+          ${projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+        </select>
+        <button type="button" class="rp-btn" style="padding:0.3rem 0.7rem; font-size:0.8rem;">Add</button>
+        <button type="button" class="rp-btn-cancel" style="padding:0.3rem 0.7rem; font-size:0.8rem; background:none; border:1px solid #ccc; color:#666; border-radius:6px; cursor:pointer;">Cancel</button>
+      `;
+      addRow.appendChild(form);
+      btn.hidden = true;
+
+      form.querySelector('.rp-btn-cancel').addEventListener('click', () => {
+        form.remove();
+        btn.hidden = false;
+      });
+
+      form.querySelector('.rp-btn').addEventListener('click', async () => {
+        const select = form.querySelector('.rp-add-select');
+        const projectId = parseInt(select.value, 10);
+        if (!projectId) { alert('Please select a project.'); return; }
+        const monthly = {};
+        RP_MONTHS.forEach(m => { monthly[m] = 0; });
+        try {
+          const resp = await fetch('/api/resource-planning/split', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: projectId, user_id: newUserId, user_name: newUserName, monthly: monthly }),
+            body: JSON.stringify({ project_id: projectId, user_id: userId, user_name: userName, monthly }),
           });
-          if (!addResp.ok) throw new Error('Reassign failed');
-          await fetch('/api/resource-planning/split/remove', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: projectId, user_id: oldUserId }),
-          });
-        } else {
-          const resp = await fetch('/api/resource-planning/reassign', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: projectId, user_id: newUserId, user_name: newUserName }),
-          });
-          if (!resp.ok) throw new Error('Reassign failed');
+          if (!resp.ok) throw new Error((await resp.json()).detail || 'Failed');
+          try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (e) {}
+          window.location.reload();
+        } catch (err) {
+          alert(err.message || 'Could not add project.');
         }
-        try { sessionStorage.setItem('rp-jump-to-project', String(projectId)); } catch (e) { /* ignore */ }
-        window.location.reload();
-      } catch (e) {
-        select.disabled = false;
-        alert('Could not reassign that project — please try again.');
-      }
+      });
     });
   });
 
-  document.querySelectorAll('.rp-hours-input').forEach(input => {
-    let lastSaved = input.value;
-    input.addEventListener('blur', async () => {
-      if (input.value === lastSaved) return;
-      const hours = parseFloat(input.value);
-      if (isNaN(hours) || hours < 0) {
-        input.value = lastSaved;
-        return;
-      }
-      const projectId = parseInt(input.dataset.projectId, 10);
-      const userId = parseInt(input.dataset.userId, 10);
-      const month = input.dataset.month;
-      try {
-        const resp = await fetch('/api/resource-planning/cell', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: projectId, user_id: userId, month: month, hours: hours }),
-        });
-        if (!resp.ok) throw new Error('Save failed');
-        lastSaved = input.value;
-        recomputeSummaryForUser(userId, month);
-      } catch (e) {
-        input.value = lastSaved;
-        alert('Could not save that change — please try again.');
-      }
-    });
-  });
-
-  // ---------- After a split (or a reassign on a split row), jump to
-  // and briefly highlight that project's rows so it's obvious where
-  // the new/moved line landed, since rows are grouped by project. ----------
+  // ---------- Jump to project after split/reassign ----------
   try {
     const jumpProjectId = sessionStorage.getItem('rp-jump-to-project');
     if (jumpProjectId) {
       sessionStorage.removeItem('rp-jump-to-project');
-      const matches = document.querySelectorAll(`#rp-detail-tbody tr[data-project-id="${jumpProjectId}"]`);
+      const matches = document.querySelectorAll(`tr[data-project-id="${jumpProjectId}"]`);
       if (matches.length) {
+        const card = matches[0].closest('.rp-card');
+        if (card) card.classList.remove('collapsed');
         matches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
         matches.forEach(row => row.classList.add('rp-just-split'));
       }
     }
-  } catch (e) { /* sessionStorage unavailable — skip the highlight, no harm done */ }
+  } catch (e) {}
 })();
 </script>
 {% endblock %}
