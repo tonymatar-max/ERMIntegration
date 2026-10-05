@@ -1821,18 +1821,14 @@ def profitability_rows_for(rows: list) -> list:
     'Project Profatibility MonYY.xlsx' workbook's Data sheet. Every column
     here already exists on the report row EXCEPT the four computed below
     (Total estimated cost, Remaining completion %, Remaining Cost, Total
-    margin by end of project), whose formulas were reverse-engineered by
-    matching real numbers from the July 2026 workbook against this app's
-    existing fields:
-      totalEstimatedCost = dailyRate/8 * estimated   (same ratio compute_row's
-          own costTillDate uses, just against Estimated instead of Spent)
+    margin by end of project):
+      blendedHourly = costTillDate / spent  (falls back to dailyRate/8 when spent=0)
+      totalEstimatedCost = blendedHourly * estimated
       remainingCompletionPct = 1 - completion
       remainingCost = remainingCompletionPct * totalEstimatedCost
       totalMarginByEndOfProject = profitTillDate + salesExpectedProfit * remainingCompletionPct
-    Uses the project's *country* Daily Rate (row['dailyRate'], resolved by
-    build_report) — still the shared per-country rate today, not a
-    per-consultant one (see the employees table/admin screen for that
-    future direction)."""
+    Uses the blended hourly rate derived from actual per-consultant Cost
+    till Date, so Total Estimated Cost reflects real consultant rates."""
     out = []
     for r in rows:
         estimated = r.get("estimated") or 0.0
@@ -1841,7 +1837,10 @@ def profitability_rows_for(rows: list) -> list:
         profit_till_date = r.get("profitTillDate") or 0.0
         sales_expected_profit = r.get("salesExpectedProfit") or 0.0
 
-        total_estimated_cost = rate / 8 * estimated
+        cost_till_date = r.get("costTillDate") or 0.0
+        spent = r.get("spent") or 0.0
+        blended_hourly = (cost_till_date / spent) if spent > 0 else (rate / 8)
+        total_estimated_cost = blended_hourly * estimated
         remaining_completion_pct = 1 - completion
         remaining_cost = remaining_completion_pct * total_estimated_cost
         total_margin_by_end = profit_till_date + sales_expected_profit * remaining_completion_pct

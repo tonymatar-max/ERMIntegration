@@ -5,9 +5,7 @@
   <h1>Consultant hourly rate</h1>
   <p class="hint">
     Every consultant seen in the cached Redmine time entries, with an hourly rate you can set per person.
-    <strong>Not used by any report yet</strong> &mdash; profitability calculations still use the
-    <a href="/admin/countries">per-country Daily Rate</a>. This is groundwork for switching PP Report /
-    Project Profitability costing to per-consultant rates later.
+    Used by the PP Report's <strong>Cost till Date</strong> and the <strong>Project Profitability</strong> view &mdash; each consultant's logged hours are costed at their own rate. A consultant with no rate set here falls back to the <a href="/admin/countries">country Daily Rate</a> converted to hourly.
   </p>
   {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
   {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}

@@ -604,8 +604,7 @@
     {% if report %}
     <div id="pp-tab-profitability" hidden>
       <p class="pp-hint" style="margin-top:0;">
-        Same layout as the old manual "Project Profatibility MonYY.xlsx" workbook (Data + Summary sheets) &mdash; uses today's
-        <a href="/admin/countries">per-country Daily Rate</a>, not yet the per-<a href="/admin/employees">consultant hourly rate</a>.
+        Same layout as the old manual "Project Profatibility MonYY.xlsx" workbook (Data + Summary sheets) &mdash; Cost till Date uses each <a href="/admin/employees">consultant's hourly rate</a>; Total Estimated Cost uses a blended rate from actual cost (falls back to the <a href="/admin/countries">country Daily Rate</a> for projects with no logged time yet).
       </p>
       <div class="pp-toolbar">
         <div class="pp-field">
