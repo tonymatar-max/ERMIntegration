@@ -208,12 +208,11 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
     figure for each month in `months` (defaults to plan_months(), now 6
     months) — auto-filled per this module's docstring, with any saved
     override (get_overrides) taking precedence over the auto-filled
-    default on a per-cell basis. Closed projects, projects with no
-    remaining estimated hours, and projects with no time entry to infer
-    an assignee from are all left out — there is nothing left to plan
-    for them (or, for a closed one, nothing that should still need
-    planning) and, for the last case, no consultant to default the row
-    onto.
+    default on a per-cell basis. Closed projects and projects with no
+    remaining estimated hours are left out.  The assignee is chosen as:
+    (1) a manual reassignment override, (2) whoever logged the most
+    recent timesheet entry, or (3) the project manager.  Only projects
+    with none of these three are skipped.
 
     Auto-fill is capacity-aware per consultant: rather than splitting
     each project's remaining hours evenly across every month regardless
@@ -258,7 +257,13 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
 
         assignee = assignee_overrides.get(p["id"]) or _most_recent_assignee(p["id"], timespent)
         if assignee is None:
-            continue
+            # Fall back to the project manager when no one has logged time yet
+            mgr_id = p.get("managerId")
+            mgr_name = p.get("managerName") or ""
+            if mgr_id:
+                assignee = {"id": mgr_id, "name": mgr_name}
+            else:
+                continue
 
         plannable_projects[p["id"]] = {"name": p.get("name"), "rapportCode": p.get("rapportCode"), "country": p.get("country"), "remaining": remaining}
         by_user.setdefault(assignee["id"], {"userName": assignee["name"], "projects": []})["projects"].append({
