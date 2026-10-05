@@ -96,6 +96,30 @@
 
   /* bulk checkbox */
   .rp-bulk-cb { width: 1rem; height: 1rem; cursor: pointer; accent-color: var(--seidor-blue); }
+
+  /* filter chips */
+  .rp-filters { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
+  .rp-filter-group { position: relative; }
+  .rp-filter-btn { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; padding: 0.35rem 0.7rem; border: 1.5px solid #dde3e8; border-radius: 7px; background: #fff; cursor: pointer; color: var(--seidor-ink); font-weight: 500; white-space: nowrap; }
+  .rp-filter-btn:hover { border-color: var(--seidor-blue); }
+  .rp-filter-btn.active { border-color: var(--seidor-blue); background: #eef2f8; color: var(--seidor-blue); }
+  .rp-filter-btn .rp-filter-arrow { font-size: 0.6rem; margin-left: 0.1rem; }
+  .rp-filter-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 14rem; max-height: 18rem; overflow-y: auto; background: #fff; border: 1px solid var(--seidor-border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 0.4rem 0; }
+  .rp-filter-dropdown.open { display: block; }
+  .rp-filter-dropdown label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.75rem; font-size: 0.82rem; cursor: pointer; }
+  .rp-filter-dropdown label:hover { background: #f4f6f9; }
+  .rp-filter-dropdown input[type="checkbox"] { accent-color: var(--seidor-blue); width: 0.9rem; height: 0.9rem; }
+  .rp-filter-search { width: calc(100% - 1rem); margin: 0.3rem 0.5rem; padding: 0.3rem 0.5rem; font-size: 0.8rem; border: 1px solid #dde3e8; border-radius: 5px; }
+  .rp-filter-sep { border-top: 1px solid #eee; margin: 0.3rem 0; }
+  .rp-filter-clear { display: block; padding: 0.3rem 0.75rem; font-size: 0.78rem; color: var(--seidor-blue); cursor: pointer; background: none; border: none; width: 100%; text-align: left; }
+  .rp-filter-clear:hover { background: #f4f6f9; }
+  .rp-toggle-filter { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; padding: 0.35rem 0.7rem; border: 1.5px solid #dde3e8; border-radius: 7px; background: #fff; cursor: pointer; color: var(--seidor-ink); font-weight: 500; }
+  .rp-toggle-filter:hover { border-color: var(--seidor-blue); }
+  .rp-toggle-filter.active { border-color: var(--seidor-blue); background: #eef2f8; color: var(--seidor-blue); }
+  .rp-active-filters { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+  .rp-filter-tag { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.72rem; background: #eef2f8; color: var(--seidor-blue); padding: 0.15rem 0.5rem; border-radius: 5px; font-weight: 500; }
+  .rp-filter-tag-x { cursor: pointer; font-size: 0.85rem; line-height: 1; margin-left: 0.15rem; }
+  .rp-filter-tag-x:hover { color: #a4262c; }
 </style>
 <div id="rp-scope">
   <h1>Resource Planning</h1>
@@ -118,6 +142,41 @@
     <button class="rp-toggle-all" id="rp-expand-all" type="button">Expand all</button>
     <button class="rp-toggle-all" id="rp-collapse-all" type="button">Collapse all</button>
     <span class="rp-hint" id="rp-count-hint"></span>
+  </div>
+
+  <!-- Filters -->
+  <div class="rp-filters" id="rp-filters">
+    <div class="rp-filter-group" id="rp-filter-country-group">
+      <button class="rp-filter-btn" id="rp-filter-country-btn" type="button">
+        Country <span class="rp-filter-arrow">▾</span>
+      </button>
+      <div class="rp-filter-dropdown" id="rp-filter-country-dd">
+        <input type="text" class="rp-filter-search" placeholder="Search countries…" id="rp-filter-country-search">
+        <div id="rp-filter-country-list"></div>
+        <div class="rp-filter-sep"></div>
+        <button class="rp-filter-clear" id="rp-filter-country-clear" type="button">Clear</button>
+      </div>
+    </div>
+
+    <div class="rp-filter-group" id="rp-filter-capacity-group">
+      <button class="rp-filter-btn" id="rp-filter-capacity-btn" type="button">
+        Capacity <span class="rp-filter-arrow">▾</span>
+      </button>
+      <div class="rp-filter-dropdown" id="rp-filter-capacity-dd">
+        <label><input type="checkbox" value="over"> Over capacity</label>
+        <label><input type="checkbox" value="warn"> Warning (85–100%)</label>
+        <label><input type="checkbox" value="ok"> OK (&lt; 85%)</label>
+        <label><input type="checkbox" value="unplanned"> Unplanned (0%)</label>
+        <div class="rp-filter-sep"></div>
+        <button class="rp-filter-clear" id="rp-filter-capacity-clear" type="button">Clear</button>
+      </div>
+    </div>
+
+    <button class="rp-toggle-filter" id="rp-filter-fully-planned" type="button">
+      <input type="checkbox" style="accent-color:var(--seidor-blue); pointer-events:none;"> Hide fully planned
+    </button>
+
+    <div class="rp-active-filters" id="rp-active-filters"></div>
   </div>
 
   <!-- Sticky company-wide totals -->
@@ -186,7 +245,7 @@
             {% for r in rows if r.userId == s.userId %}
             <tr draggable="true" data-search="{{ (r.userName ~ ' ' ~ r.projectName)|lower }}" data-project-id="{{ r.projectId }}" data-project-name="{{ r.projectName }}"
                 data-remaining="{{ r.remaining }}" data-is-extra-row="{{ 'true' if r.isExtraRow else 'false' }}"
-                data-user-id="{{ r.userId }}" data-user-name="{{ r.userName }}">
+                data-user-id="{{ r.userId }}" data-user-name="{{ r.userName }}" data-country="{{ r.country or '' }}">
               <td><input type="checkbox" class="rp-bulk-cb rp-row-cb"></td>
               <td>
                 <span class="rp-drag-handle" title="Drag to move">⠿</span>
@@ -251,36 +310,219 @@ const RP_MONTHS = {{ months | tojson }};
     document.querySelectorAll('.rp-card').forEach(c => c.classList.add('collapsed'));
   });
 
-  // ---------- Search ----------
+  // ---------- Filter state ----------
   const search = document.getElementById('rp-search');
   const countHint = document.getElementById('rp-count-hint');
   const cards = Array.from(document.querySelectorAll('.rp-card'));
+  const filterCountries = new Set();
+  const filterCapacity = new Set();
+  let filterFullyPlanned = false;
 
+  // ---------- Country filter setup ----------
+  const allCountries = new Set();
+  document.querySelectorAll('tr[data-country]').forEach(tr => {
+    const c = tr.dataset.country.trim();
+    if (c) allCountries.add(c);
+  });
+  const countryList = document.getElementById('rp-filter-country-list');
+  const countrySearch = document.getElementById('rp-filter-country-search');
+  function renderCountryOptions(filter) {
+    const f = (filter || '').toLowerCase();
+    countryList.innerHTML = '';
+    [...allCountries].sort().forEach(c => {
+      if (f && !c.toLowerCase().includes(f)) return;
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = c;
+      if (filterCountries.has(c)) cb.checked = true;
+      cb.addEventListener('change', () => {
+        if (cb.checked) filterCountries.add(c); else filterCountries.delete(c);
+        applyFilter();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + c));
+      countryList.appendChild(label);
+    });
+  }
+  renderCountryOptions();
+  countrySearch.addEventListener('input', () => renderCountryOptions(countrySearch.value));
+  document.getElementById('rp-filter-country-clear').addEventListener('click', () => {
+    filterCountries.clear(); renderCountryOptions(countrySearch.value); applyFilter();
+  });
+
+  // ---------- Capacity filter setup ----------
+  const capacityDd = document.getElementById('rp-filter-capacity-dd');
+  capacityDd.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) filterCapacity.add(cb.value); else filterCapacity.delete(cb.value);
+      applyFilter();
+    });
+  });
+  document.getElementById('rp-filter-capacity-clear').addEventListener('click', () => {
+    filterCapacity.clear();
+    capacityDd.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+    applyFilter();
+  });
+
+  // ---------- Fully planned toggle ----------
+  const fullyPlannedBtn = document.getElementById('rp-filter-fully-planned');
+  fullyPlannedBtn.addEventListener('click', () => {
+    filterFullyPlanned = !filterFullyPlanned;
+    fullyPlannedBtn.classList.toggle('active', filterFullyPlanned);
+    fullyPlannedBtn.querySelector('input').checked = filterFullyPlanned;
+    applyFilter();
+  });
+
+  // ---------- Dropdown open/close ----------
+  document.querySelectorAll('.rp-filter-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dd = btn.nextElementSibling;
+      const wasOpen = dd.classList.contains('open');
+      document.querySelectorAll('.rp-filter-dropdown.open').forEach(d => d.classList.remove('open'));
+      if (!wasOpen) dd.classList.add('open');
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.rp-filter-group')) {
+      document.querySelectorAll('.rp-filter-dropdown.open').forEach(d => d.classList.remove('open'));
+    }
+  });
+
+  // ---------- Get consultant capacity status ----------
+  function getCardCapacityStatus(card) {
+    let maxUtil = 0;
+    let anyPlanned = false;
+    card.querySelectorAll('.rp-summary-cell').forEach(cell => {
+      const cap = parseFloat(cell.dataset.capacity) || 0;
+      if (!cap) return;
+      const month = cell.dataset.month;
+      const inputs = card.querySelectorAll(`.rp-hours-input[data-month="${month}"]`);
+      let total = 0;
+      inputs.forEach(i => { total += parseFloat(i.value) || 0; });
+      if (total > 0) anyPlanned = true;
+      const util = total / cap;
+      if (util > maxUtil) maxUtil = util;
+    });
+    if (!anyPlanned) return 'unplanned';
+    if (maxUtil > 1) return 'over';
+    if (maxUtil > 0.85) return 'warn';
+    return 'ok';
+  }
+
+  // ---------- Unified filter ----------
   function applyFilter() {
     const term = (search.value || '').trim().toLowerCase();
     let visibleCards = 0;
+
     cards.forEach(card => {
-      if (!term) {
-        card.hidden = false;
-        card.querySelectorAll('tbody tr').forEach(tr => { tr.hidden = false; });
-        visibleCards++;
-        return;
+      // Capacity filter
+      if (filterCapacity.size) {
+        const status = getCardCapacityStatus(card);
+        if (!filterCapacity.has(status)) { card.hidden = true; return; }
       }
+
+      // Country filter — card is visible if any of its rows match a selected country
+      if (filterCountries.size) {
+        const cardCountries = new Set();
+        card.querySelectorAll('tr[data-country]').forEach(tr => {
+          const c = tr.dataset.country.trim();
+          if (c) cardCountries.add(c);
+        });
+        let hasMatch = false;
+        for (const c of filterCountries) { if (cardCountries.has(c)) { hasMatch = true; break; } }
+        if (!hasMatch) { card.hidden = true; return; }
+      }
+
+      // Now handle per-row visibility (search + fully planned + country)
+      card.hidden = false;
       const userName = card.dataset.userName || '';
-      const matchesConsultant = userName.includes(term);
+      const matchesConsultant = !term || userName.includes(term);
       let hasVisibleRow = false;
+
       card.querySelectorAll('tbody tr').forEach(tr => {
-        const matchesRow = (tr.dataset.search || '').includes(term);
-        tr.hidden = !matchesConsultant && !matchesRow;
-        if (!tr.hidden) hasVisibleRow = true;
+        let show = true;
+        // Search
+        if (term && !matchesConsultant) {
+          const matchesRow = (tr.dataset.search || '').includes(term);
+          if (!matchesRow) show = false;
+        }
+        // Country per-row
+        if (show && filterCountries.size) {
+          const rc = (tr.dataset.country || '').trim();
+          if (rc && !filterCountries.has(rc)) show = false;
+        }
+        // Fully planned
+        if (show && filterFullyPlanned) {
+          const remaining = parseFloat(tr.dataset.remaining) || 0;
+          let planned = 0;
+          tr.querySelectorAll('.rp-hours-input').forEach(i => { planned += parseFloat(i.value) || 0; });
+          if (remaining > 0 && planned >= remaining) show = false;
+        }
+        tr.hidden = !show;
+        if (show) hasVisibleRow = true;
       });
-      card.hidden = !matchesConsultant && !hasVisibleRow;
-      if (!card.hidden) {
-        visibleCards++;
-        if (term) card.classList.remove('collapsed');
+
+      if (!matchesConsultant && !hasVisibleRow) {
+        card.hidden = true;
+      } else {
+        if (!card.hidden) visibleCards++;
+        if (term || filterCountries.size || filterFullyPlanned) card.classList.remove('collapsed');
       }
     });
     countHint.textContent = `Showing ${visibleCards} of ${cards.length} consultants`;
+
+    // Update filter button active states
+    document.getElementById('rp-filter-country-btn').classList.toggle('active', filterCountries.size > 0);
+    document.getElementById('rp-filter-capacity-btn').classList.toggle('active', filterCapacity.size > 0);
+
+    // Update active filter tags
+    const tagsDiv = document.getElementById('rp-active-filters');
+    tagsDiv.innerHTML = '';
+    filterCountries.forEach(c => {
+      const tag = document.createElement('span');
+      tag.className = 'rp-filter-tag';
+      tag.innerHTML = `${c} <span class="rp-filter-tag-x" data-remove-country="${c}">&times;</span>`;
+      tagsDiv.appendChild(tag);
+    });
+    filterCapacity.forEach(c => {
+      const labels = { over: 'Over capacity', warn: 'Warning', ok: 'OK', unplanned: 'Unplanned' };
+      const tag = document.createElement('span');
+      tag.className = 'rp-filter-tag';
+      tag.innerHTML = `${labels[c] || c} <span class="rp-filter-tag-x" data-remove-capacity="${c}">&times;</span>`;
+      tagsDiv.appendChild(tag);
+    });
+    if (filterFullyPlanned) {
+      const tag = document.createElement('span');
+      tag.className = 'rp-filter-tag';
+      tag.innerHTML = `Fully planned hidden <span class="rp-filter-tag-x" data-remove-planned>&times;</span>`;
+      tagsDiv.appendChild(tag);
+    }
+    // Tag click handlers
+    tagsDiv.querySelectorAll('[data-remove-country]').forEach(x => {
+      x.addEventListener('click', () => {
+        filterCountries.delete(x.dataset.removeCountry);
+        renderCountryOptions(countrySearch.value);
+        applyFilter();
+      });
+    });
+    tagsDiv.querySelectorAll('[data-remove-capacity]').forEach(x => {
+      x.addEventListener('click', () => {
+        filterCapacity.delete(x.dataset.removeCapacity);
+        capacityDd.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          if (cb.value === x.dataset.removeCapacity) cb.checked = false;
+        });
+        applyFilter();
+      });
+    });
+    tagsDiv.querySelectorAll('[data-remove-planned]').forEach(x => {
+      x.addEventListener('click', () => {
+        filterFullyPlanned = false;
+        fullyPlannedBtn.classList.remove('active');
+        fullyPlannedBtn.querySelector('input').checked = false;
+        applyFilter();
+      });
+    });
   }
   search.addEventListener('input', applyFilter);
   applyFilter();
