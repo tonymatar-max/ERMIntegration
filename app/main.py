@@ -1156,6 +1156,52 @@ def dashboard(request: Request):
     )
 
 
+def _build_ai_summary_prompt(stats: dict, scope: str) -> str:
+    """Turn the dashboard's current figures into a compact, numeric prompt."""
+    import json as _json
+    scope = scope or "the current Project Ledger view"
+    return (
+        f"Write a short management summary of {scope} for a SAP Business One "
+        "consulting firm. Lead with the 2-3 things that matter most (budget "
+        "overruns, utilization/capacity risk, revenue concentration), name "
+        "specific projects/countries/PMs from the data, and end with 2-3 concrete "
+        "actions. Keep it under 180 words. Use the figures below; do not invent "
+        "numbers.\n\nFIGURES (JSON):\n" + _json.dumps(stats, ensure_ascii=False)
+    )
+
+
+@app.post("/api/ai-summary")
+async def api_ai_summary(request: Request):
+    """Send the dashboard's current figures to the configured OpenRouter model
+    and return a short narrative. The key never leaves the server."""
+    user = require_login(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"detail": "Not logged in."})
+    ors = settings_store.get_openrouter_settings()
+    if not ors["api_key"] or not ors["model"]:
+        return JSONResponse(status_code=400, content={"detail": "OpenRouter isn't configured yet — add an API key and pick a model under App Settings → OpenRouter."})
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    stats = body.get("stats") or {}
+    scope = (body.get("scope") or "").strip()
+    if not stats:
+        return JSONResponse(status_code=400, content={"detail": "No figures to summarize."})
+    try:
+        text = openrouter_client.chat(
+            ors["api_key"], ors["model"],
+            [
+                {"role": "system", "content": "You are a delivery-operations analyst for a SAP Business One consulting firm. Be concise, specific and numeric. No preamble, no restating the question."},
+                {"role": "user", "content": _build_ai_summary_prompt(stats, scope)},
+            ],
+        )
+    except openrouter_client.OpenRouterError as e:
+        return JSONResponse(status_code=502, content={"detail": str(e)})
+    logger.info("AI summary generated for %r via %s", user["username"], ors["model"])
+    return JSONResponse(content={"summary": text, "model": ors["model"]})
+
+
 @app.post("/api/refresh")
 def api_refresh(request: Request, background_tasks: BackgroundTasks):
     user = require_login(request)

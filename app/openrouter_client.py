@@ -34,6 +34,40 @@ def fetch_models(timeout: int = 8) -> list:
         return FALLBACK_MODELS
 
 
+class OpenRouterError(Exception):
+    pass
+
+
+def chat(api_key: str, model: str, messages: list, timeout: int = 60, max_tokens: int = 900) -> str:
+    """One chat completion via OpenRouter; returns the assistant text. Raises
+    OpenRouterError with a user-facing message on failure."""
+    if not api_key:
+        raise OpenRouterError("No OpenRouter API key configured (App Settings → OpenRouter).")
+    if not model:
+        raise OpenRouterError("No OpenRouter model selected (App Settings → OpenRouter).")
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+                     "HTTP-Referer": "https://erm.seidor", "X-Title": "ERM Project Ledger"},
+            json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3},
+            timeout=timeout,
+        )
+    except Exception as e:
+        raise OpenRouterError(f"Could not reach OpenRouter: {e}")
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = (resp.json().get("error") or {}).get("message") or ""
+        except Exception:
+            detail = resp.text[:200]
+        raise OpenRouterError(f"OpenRouter error (HTTP {resp.status_code}): {detail}")
+    try:
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, ValueError):
+        raise OpenRouterError("OpenRouter returned an unexpected response shape.")
+
+
 def test_connection(api_key: str, timeout: int = 10) -> tuple:
     """(ok, message) — verifies the API key by calling the authenticated
     /key endpoint. Does not spend tokens."""
