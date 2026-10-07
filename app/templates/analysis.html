@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Analysis &mdash; ERM{% endblock %}
+{% block content %}
+<style>
+  #an-scope { max-width: 1120px; margin: 0 auto; padding: 22px 1.25rem 60px; }
+  #an-scope h1.page { font-size: 1.5rem; font-weight: 600; color: var(--seidor-navy); margin: 0 0 2px; }
+  #an-scope .sub { color: var(--seidor-ink-soft); font-size: 0.86rem; margin: 0 0 18px; }
+  #an-scope .sub code { background: #eef2f9; padding: 1px 6px; border-radius: 5px; font-size: 0.82em; }
+  #an-scope .sec-label { text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.68rem; font-weight: 600; color: var(--seidor-blue); margin: 30px 0 12px; display: flex; align-items: center; gap: 10px; }
+  #an-scope .sec-label::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, var(--seidor-border), transparent); }
+  #an-scope .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  #an-scope .kpi { position: relative; background: #fff; border: 1px solid var(--seidor-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(7,21,58,.05); padding: 15px; overflow: hidden; }
+  #an-scope .kpi::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--seidor-blue), var(--seidor-accent)); }
+  #an-scope .kpi.warn::before { background: #9a6b00; } #an-scope .kpi.crit::before { background: #b3261e; }
+  #an-scope .kpi .v { font-size: 1.4rem; font-weight: 700; color: var(--seidor-navy); line-height: 1; font-variant-numeric: tabular-nums; }
+  #an-scope .kpi.warn .v { color: #9a6b00; } #an-scope .kpi.crit .v { color: #b3261e; }
+  #an-scope .kpi .l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--seidor-ink-soft); margin-top: 7px; }
+  #an-scope .kpi .u { font-size: 0.85rem; color: var(--seidor-ink-soft); }
+  #an-scope .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  #an-scope .card { background: #fff; border: 1px solid var(--seidor-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(7,21,58,.05); padding: 18px; }
+  #an-scope .card h3 { margin: 0 0 14px; font-size: 0.98rem; font-weight: 600; color: var(--seidor-navy); }
+  #an-scope table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  #an-scope thead th { text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--seidor-ink-soft); padding: 8px; border-bottom: 1px solid var(--seidor-border); }
+  #an-scope tbody td { padding: 8px; border-bottom: 1px solid var(--seidor-border); color: var(--seidor-ink-soft); }
+  #an-scope td.num, #an-scope th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #an-scope .pname { color: var(--seidor-navy); font-weight: 600; }
+  #an-scope .pill { font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  #an-scope .pill.crit { color: #b3261e; background: #fdecea; } #an-scope .pill.warn { color: #9a6b00; background: #fbf1d9; }
+  #an-scope .bars { display: flex; flex-direction: column; gap: 10px; }
+  #an-scope .barrow { display: grid; grid-template-columns: 110px 1fr 66px; align-items: center; gap: 10px; font-size: 0.82rem; }
+  #an-scope .barrow .lab { color: var(--seidor-ink-soft); }
+  #an-scope .track { height: 19px; background: #eef2f9; border-radius: 6px; overflow: hidden; }
+  #an-scope .track > i { display: block; height: 100%; }
+  #an-scope .fi { background: linear-gradient(90deg, var(--seidor-blue), #1f4fb0); }
+  #an-scope .fa { background: linear-gradient(90deg, var(--seidor-accent), #00bfff); }
+  #an-scope .fw { background: #9a6b00; } #an-scope .fc { background: #b3261e; } #an-scope .fg { background: #1e7a45; }
+  #an-scope .barrow .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--seidor-navy); font-weight: 600; }
+  #an-scope .ai-btn { display: inline-flex; align-items: center; font: inherit; font-size: 12.5px; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--seidor-accent), #1f4fb0); border: none; border-radius: 8px; padding: 9px 15px; cursor: pointer; }
+  #an-scope .ai-btn:disabled { opacity: .6; cursor: default; }
+  #an-scope .ai-panel { border: 1px solid var(--seidor-border); border-left: 4px solid var(--seidor-accent); border-radius: 12px; background: #fff; padding: 14px 18px; margin-top: 14px; }
+  #an-scope .ai-text { font-size: 13.5px; line-height: 1.6; color: var(--seidor-ink-soft); white-space: pre-wrap; }
+  #an-scope .legend { display:flex; gap:16px; font-size:.76rem; color:var(--seidor-ink-soft); margin-bottom:10px; }
+  #an-scope .legend span { display:inline-flex; align-items:center; gap:6px; }
+  #an-scope .dot { width:11px; height:11px; border-radius:3px; }
+  @media (max-width: 860px) { #an-scope .kpis { grid-template-columns: repeat(3,1fr); } #an-scope .grid2 { grid-template-columns: 1fr; } }
+</style>
+
+<div id="an-scope">
+  <h1 class="page">Analysis</h1>
+  {% if not has_settings %}
+    <div class="msg error">The shared Redmine connection isn't configured yet. Ask an admin to set it up under App Settings.</div>
+  {% elif not data %}
+    <div class="msg error">No data cached yet &mdash; run <a href="/dashboard">Refresh from Redmine</a> first.</div>
+  {% else %}
+  <p class="sub">Live insights over {{ data.month_labels|join(', ') }} &mdash; recomputed from the latest refresh (report generated <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on or '' }}"></span>).</p>
+
+  {% set p = data.portfolio %}
+  <div class="kpis">
+    <div class="kpi"><div class="v">{{ "{:,}".format(p.window_hours) }}<span class="u">h</span></div><div class="l">Hours ({{ data.month_labels[0] }}&ndash;{{ data.month_labels[-1] }})</div></div>
+    <div class="kpi {{ 'warn' if data.utilization[data.months[-1]].avg_pct < 90 else '' }}"><div class="v">{{ data.utilization[data.months[-1]].avg_pct }}<span class="u">%</span></div><div class="l">Utilization ({{ data.month_labels[-1] }})</div></div>
+    <div class="kpi"><div class="v">${{ "%.2f"|format(p.order/1000000) }}<span class="u">M</span></div><div class="l">Order book</div></div>
+    <div class="kpi"><div class="v">{{ p.consumed_pct }}<span class="u">%</span></div><div class="l">Budget consumed</div></div>
+    <div class="kpi warn"><div class="v">{{ p.over_budget }}</div><div class="l">Over budget</div></div>
+    <div class="kpi crit"><div class="v">{{ p.negative_remaining }}</div><div class="l">Negative remaining</div></div>
+  </div>
+
+  <!-- Hours & utilization by month -->
+  <div class="sec-label">Hours &amp; utilization by month</div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Hours logged</h3>
+      <div class="legend"><span><span class="dot fi"></span>Redmine</span><span><span class="dot fa"></span>KSA</span></div>
+      <div class="bars">
+        {% set hmax = data.hours_by_month.values()|map(attribute='total')|max %}
+        {% for m in data.months %}
+        {% set hm = data.hours_by_month[m] %}
+        <div class="barrow"><div class="lab">{{ data.month_labels[loop.index0] }} &middot; {{ data.utilization[m].avg_pct }}%</div>
+          <div class="track" style="display:flex">
+            <i class="fi" style="width:{{ (100*hm.redmine/hmax)|round|int }}%"></i><i class="fa" style="width:{{ (100*hm.ksa/hmax)|round|int }}%"></i>
+          </div><div class="val">{{ "{:,}".format(hm.total) }}</div></div>
+        {% endfor %}
+      </div>
+      <p class="sub" style="margin:12px 0 0">Active consultants: {% for m in data.months %}{{ data.utilization[m].active }} ({{ data.month_labels[loop.index0][:3] }}){% if not loop.last %} &middot; {% endif %}{% endfor %}. Capacity {{ data.utilization[data.months[-1]].capacity }}h/person.</p>
+    </div>
+    <div class="card">
+      <h3>Country efficiency</h3>
+      <table>
+        <thead><tr><th>Country</th><th class="num">Projects</th><th class="num">$/spent-h</th><th class="num">Consumed</th></tr></thead>
+        <tbody>
+          {% for c, b in data.by_country.items() %}
+          <tr><td class="pname">{{ c }}</td><td class="num">{{ b.projects }}</td><td class="num">{{ ('$' ~ b.rate_per_spent_h) if b.rate_per_spent_h else '—' }}</td><td class="num">{{ b.consumed_pct }}%</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Margin leakage -->
+  <div class="sec-label">Margin leakage &mdash; top over-budget ({{ "{:,}".format(data.total_overrun) }} overrun hrs)</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Project</th><th>PM</th><th class="num">Est</th><th class="num">Spent</th><th class="num">Overrun</th><th class="num">%</th></tr></thead>
+      <tbody>
+        {% for r in data.top_over_budget %}
+        <tr>
+          <td><span class="pname">{{ r.name[:46] }}</span>{% if r.country %}<br><span style="font-size:.72rem;color:var(--seidor-ink-soft)">{{ r.country }}</span>{% endif %}</td>
+          <td>{{ r.pm }}</td><td class="num">{{ "{:,}".format(r.est) }}</td><td class="num">{{ "{:,}".format(r.spent) }}</td>
+          <td class="num"><b style="color:#b3261e">+{{ "{:,}".format(r.overrun) }}</b></td>
+          <td class="num"><span class="pill {{ 'crit' if r.pct >= 150 else 'warn' }}">{{ r.pct }}%</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- KSA + cross-team -->
+  <div class="sec-label">KSA &amp; cross-team</div>
+  <div class="grid2">
+    <div class="card">
+      <h3>KSA time: project vs leave/support</h3>
+      {% set ks = data.ksa_split %}{% set ktot = (ks.project + ks.leave_support) or 1 %}
+      <div class="bars">
+        <div class="barrow"><div class="lab">Project</div><div class="track"><i class="fg" style="width:{{ (100*ks.project/ktot)|round|int }}%"></i></div><div class="val">{{ "{:,}".format(ks.project) }}h</div></div>
+        <div class="barrow"><div class="lab">Leave / support</div><div class="track"><i class="fw" style="width:{{ (100*ks.leave_support/ktot)|round|int }}%"></i></div><div class="val">{{ "{:,}".format(ks.leave_support) }}h</div></div>
+      </div>
+      <p class="sub" style="margin:12px 0 0">Leave/support is {{ (100*ks.leave_support/ktot)|round|int }}% of KSA hours. Set codes under <a href="/admin/pp-report-months">PP Report Data</a>.</p>
+    </div>
+    <div class="card">
+      <h3>Cross-team consultants</h3>
+      <p class="sub" style="margin:0 0 12px">Logged time to more than one team</p>
+      <div class="bars">
+        {% set cmax = data.cross_team.values()|max or 1 %}
+        {% for m in data.months %}
+        <div class="barrow"><div class="lab">{{ data.month_labels[loop.index0] }}</div><div class="track"><i class="fi" style="width:{{ (100*data.cross_team[m]/cmax)|round|int }}%"></i></div><div class="val">{{ data.cross_team[m] }}</div></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- AI summary -->
+  {% if openrouter_ready %}
+  <div class="sec-label">AI summary</div>
+  <div class="card">
+    <button id="an-ai-btn" type="button" class="ai-btn">Generate AI summary</button>
+    <span id="an-ai-status" style="font-size:12.5px;color:var(--seidor-ink-soft);margin-left:12px"></span>
+    <div id="an-ai-panel" class="ai-panel" hidden><div id="an-ai-text" class="ai-text"></div><div id="an-ai-model" style="font-size:11px;color:var(--seidor-ink-soft);margin-top:8px;font-family:monospace"></div></div>
+  </div>
+  {% endif %}
+
+  <script>
+    window.__ANALYSIS__ = {{ data | tojson }};
+    (function(){
+      const btn = document.getElementById('an-ai-btn');
+      if (!btn) return;
+      const statusEl = document.getElementById('an-ai-status');
+      const panel = document.getElementById('an-ai-panel');
+      const textEl = document.getElementById('an-ai-text');
+      const modelEl = document.getElementById('an-ai-model');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; statusEl.textContent = 'Generating…';
+        const d = window.__ANALYSIS__;
+        const stats = {
+          window: d.month_labels.join('–'), portfolio: d.portfolio,
+          by_country: d.by_country, utilization: d.utilization,
+          top_over_budget: d.top_over_budget, total_overrun: d.total_overrun,
+          ksa_split: d.ksa_split, cross_team: d.cross_team,
+        };
+        try {
+          const resp = await fetch('/api/ai-summary', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ scope: 'the Q3 delivery analysis (' + stats.window + ')', stats }) });
+          const body = await resp.json();
+          if (!resp.ok) throw new Error(body.detail || 'Request failed');
+          textEl.textContent = body.summary || '(no summary)'; modelEl.textContent = body.model || '';
+          panel.hidden = false; statusEl.textContent = '';
+        } catch (e) { statusEl.textContent = 'Error: ' + e.message; }
+        finally { btn.disabled = false; }
+      });
+    })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}

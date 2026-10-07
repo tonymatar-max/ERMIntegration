@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from . import auth, db, openrouter_client, pp_report, resource_planning, scheduler, settings_store
+from . import analysis, auth, db, openrouter_client, pp_report, resource_planning, scheduler, settings_store
 from .logging_config import LOG_PATH, logger, setup_logging
 from .redmine_client import (
     EDITABLE_FIELD_IDS,
@@ -42,6 +42,7 @@ _jinja_env = jinja2.Environment(
 # icon without each route having to pass it.
 NAV_BY_TEMPLATE = {
     "dashboard_shell.html": "dashboard",
+    "analysis.html": "analysis",
     "pp_report.html": "pp-report",
     "resource_planning.html": "resource",
     "utilization_report.html": "utilization",
@@ -1167,6 +1168,43 @@ def _build_ai_summary_prompt(stats: dict, scope: str) -> str:
         "actions. Keep it under 180 words. Use the figures below; do not invent "
         "numbers.\n\nFIGURES (JSON):\n" + _json.dumps(stats, ensure_ascii=False)
     )
+
+
+@app.get("/analysis", response_class=HTMLResponse)
+def analysis_page(request: Request):
+    """Live insights (utilization, margin leakage, country efficiency, KSA,
+    cross-team) computed from the current cache — refreshes with every Redmine
+    refresh. Same visibility rules as the dashboard."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+
+    settings = settings_store.get_app_settings()
+    has_settings = bool(settings["redmine_url"] and settings["api_key"])
+    data = None
+    fetched_on = None
+    if has_settings:
+        projects, fetched_on = settings_store.load_cache("projects")
+        timespent, _ = settings_store.load_cache("timespent")
+        projects = _drop_excluded_managers(projects)
+        assigned = _assigned_manager_id(user)
+        visible_full = _visible_projects(projects, user)
+        if not assigned:
+            ts = _visible_timespent(timespent, {p["id"] for p in visible_full})
+            ts = ts + pp_report.ksa_timesheet_entries_all(settings_store.distinct_timesheet_users(ts))
+        else:
+            pm_ids = {p["id"] for p in visible_full}
+            team = {t.get("user_id") for t in timespent if t.get("project_id") in pm_ids and t.get("user_id")}
+            ts = [t for t in timespent if t.get("user_id") in team]
+        report_month = (fetched_on or "")[:7] or resource_planning.current_month_str()
+        data = analysis.build_analysis(visible_full, ts, report_month, settings_store.get_ksa_excluded_codes())
+
+    ors = settings_store.get_openrouter_settings()
+    return templates.TemplateResponse("analysis.html", {
+        "request": request, "user": user, "has_settings": has_settings,
+        "data": data, "fetched_on": fetched_on,
+        "openrouter_ready": bool(ors["api_key"] and ors["models"]),
+    })
 
 
 @app.post("/api/ai-summary")
