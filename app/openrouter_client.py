@@ -38,59 +38,65 @@ class OpenRouterError(Exception):
     pass
 
 
+def _one_completion(api_key: str, model: str, messages: list, timeout: int, max_tokens: int) -> str:
+    """Call a single model; return its text, or "" if it produced none. Raises
+    OpenRouterError only for transport/HTTP errors (so the caller can fall back)."""
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+                     "HTTP-Referer": "https://erm.seidor", "X-Title": "ERM Project Ledger"},
+            json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3},
+            timeout=timeout,
+        )
+    except Exception as e:
+        raise OpenRouterError(f"could not reach OpenRouter: {e}")
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = (resp.json().get("error") or {}).get("message") or ""
+        except Exception:
+            detail = resp.text[:160]
+        raise OpenRouterError(f"HTTP {resp.status_code}: {detail}")
+    try:
+        msg = (resp.json().get("choices") or [{}])[0].get("message") or {}
+    except (ValueError, IndexError, AttributeError, TypeError):
+        return ""
+    content = msg.get("content")
+    if content is None:
+        content = msg.get("reasoning")  # some reasoning-only models
+    return str(content).strip() if content else ""
+
+
 def chat(api_key: str, models, messages: list, timeout: int = 60, max_tokens: int = 900) -> dict:
-    """One chat completion via OpenRouter with model fallback. `models` is a
-    list (primary first, then fallbacks, max 3) or a single model string;
-    OpenRouter tries them in order if one is down/rate-limited/refuses. Returns
-    {text, model} where model is the one that actually answered. Raises
-    OpenRouterError with a user-facing message on failure."""
+    """A chat completion with model fallback. `models` is a list (primary first,
+    then fallbacks, max 3) or a single string. Each model is tried in order and
+    one that errors OR returns no text (reranker/embedding/empty) is skipped, so
+    a bad primary doesn't break the feature. Returns {text, model} of the model
+    that actually answered; raises OpenRouterError only if all fail."""
     if not api_key:
         raise OpenRouterError("No OpenRouter API key configured (App Settings → OpenRouter).")
     model_list = [m for m in ([models] if isinstance(models, str) else list(models or [])) if m][:3]
     if not model_list:
         raise OpenRouterError("No OpenRouter model configured (App Settings → OpenRouter).")
 
-    body = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.3}
-    # OpenRouter takes a single `model`, or a `models` array for ordered fallback.
-    if len(model_list) == 1:
-        body["model"] = model_list[0]
-    else:
-        body["models"] = model_list
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
-                     "HTTP-Referer": "https://erm.seidor", "X-Title": "ERM Project Ledger"},
-            json=body, timeout=timeout,
-        )
-    except Exception as e:
-        raise OpenRouterError(f"Could not reach OpenRouter: {e}")
-    if resp.status_code != 200:
-        detail = ""
+    errors = []
+    for model in model_list:
         try:
-            detail = (resp.json().get("error") or {}).get("message") or ""
-        except Exception:
-            detail = resp.text[:200]
-        raise OpenRouterError(f"OpenRouter error (HTTP {resp.status_code}): {detail}")
-    try:
-        data = resp.json()
-        msg = (data.get("choices") or [{}])[0].get("message") or {}
-        # Some models return null content (reasoning-only models, or non-chat
-        # models like rerankers/embeddings that shouldn't be used here).
-        content = msg.get("content")
-        if content is None:
-            content = msg.get("reasoning")
-        if not content or not str(content).strip():
-            raise OpenRouterError(
-                "The model returned no text. Make sure the model is a text/chat "
-                "model (not a reranker, embedding, or audio/image model) — check "
-                "App Settings → OpenRouter."
-            )
-        return {"text": str(content).strip(), "model": data.get("model") or model_list[0]}
-    except OpenRouterError:
-        raise
-    except (KeyError, IndexError, ValueError, AttributeError, TypeError):
-        raise OpenRouterError("OpenRouter returned an unexpected response shape.")
+            text = _one_completion(api_key, model, messages, timeout, max_tokens)
+        except OpenRouterError as e:
+            errors.append(f"{model}: {e}")
+            continue
+        if text:
+            return {"text": text, "model": model}
+        errors.append(f"{model}: returned no text (not a chat model?)")
+
+    if len(model_list) == 1:
+        raise OpenRouterError(
+            f"{model_list[0]} {errors[0].split(': ', 1)[-1]}. "
+            "Try a text/chat model (e.g. openai/gpt-4o-mini) in App Settings → OpenRouter."
+        )
+    raise OpenRouterError("All configured models failed — " + "; ".join(errors))
 
 
 def test_connection(api_key: str, timeout: int = 10) -> tuple:
