@@ -2582,7 +2582,8 @@
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ scope: "the overall Project Ledger portfolio", stats: buildStats() }),
         });
-        const body = await resp.json();
+        const raw = await resp.text();
+        let body; try { body = JSON.parse(raw); } catch (_) { throw new Error((raw || "Server error").slice(0, 180)); }
         if (!resp.ok) throw new Error(body.detail || "Request failed");
         textEl.textContent = body.summary || "(no summary returned)";
         modelEl.textContent = body.model || "";

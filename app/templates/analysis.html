@@ -168,7 +168,8 @@
         try {
           const resp = await fetch('/api/ai-summary', { method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ scope: 'the Q3 delivery analysis (' + stats.window + ')', stats }) });
-          const body = await resp.json();
+          const raw = await resp.text();
+          let body; try { body = JSON.parse(raw); } catch (_) { throw new Error((raw || 'Server error').slice(0, 180)); }
           if (!resp.ok) throw new Error(body.detail || 'Request failed');
           textEl.textContent = body.summary || '(no summary)'; modelEl.textContent = body.model || '';
           panel.hidden = false; statusEl.textContent = '';

@@ -1235,8 +1235,16 @@ async def api_ai_summary(request: Request):
         )
     except openrouter_client.OpenRouterError as e:
         return JSONResponse(status_code=502, content={"detail": str(e)})
-    logger.info("AI summary generated for %r via %s", user["username"], result["model"])
-    return JSONResponse(content={"summary": result["text"], "model": result["model"]})
+    except Exception as e:
+        # Never let an unexpected error fall through as a non-JSON 500 — the
+        # client parses JSON. Surface a readable message instead.
+        logger.exception("AI summary failed")
+        return JSONResponse(status_code=500, content={"detail": f"AI summary failed: {e}"})
+    # chat() returns a dict; tolerate an old deployment that returned a string.
+    if isinstance(result, str):
+        result = {"text": result, "model": ors["models"][0]}
+    logger.info("AI summary generated for %r via %s", user["username"], result.get("model"))
+    return JSONResponse(content={"summary": result.get("text", ""), "model": result.get("model", "")})
 
 
 @app.post("/api/refresh")
