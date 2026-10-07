@@ -88,6 +88,33 @@
   </form>
 </div>
 
+<div class="wrap wide">
+  <h1>OpenRouter (AI)</h1>
+  <p class="hint">Connect an <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> API key and pick a model to power the app's AI features. The key is stored encrypted, the same way the Redmine key is.</p>
+  <form method="post" action="/app-settings/openrouter">
+    <label>OpenRouter API key</label>
+    <input type="password" name="openrouter_api_key" placeholder="{{ 'Leave blank to keep the saved key' if openrouter.api_key else 'sk-or-v1-…' }}">
+    <p class="hint">Create one at openrouter.ai &rarr; Keys. Leave blank to keep the current key.</p>
+
+    <label>Model</label>
+    <select name="openrouter_model">
+      <option value="">&mdash; Select a model &mdash;</option>
+      {% if openrouter.model and openrouter.model not in openrouter_models %}
+        <option value="{{ openrouter.model }}" selected>{{ openrouter.model }} (saved)</option>
+      {% endif %}
+      {% for m in openrouter_models %}
+        <option value="{{ m }}" {{ 'selected' if m == openrouter.model else '' }}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">{{ openrouter_models|length }} model(s) available from OpenRouter. The saved model is kept at the top if it isn't in the live list.</p>
+
+    <div class="row">
+      <button type="submit">Save OpenRouter settings</button>
+      <button type="submit" name="action" value="test" class="secondary">Test key</button>
+    </div>
+  </form>
+</div>
+
 <script>
 (function() {
   const modeSelect = document.getElementById('ar-mode');

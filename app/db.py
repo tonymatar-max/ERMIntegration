@@ -188,6 +188,15 @@ def _migrate(conn):
     if not _column_exists(conn, "app_settings", "consultant_name_map"):
         conn.execute("ALTER TABLE app_settings ADD COLUMN consultant_name_map TEXT NOT NULL DEFAULT ''")
 
+    # OpenRouter (AI) settings: an encrypted API key and the chosen model id —
+    # for AI features (summaries/analysis) driven through OpenRouter. The key is
+    # encrypted with the app secret like the Redmine key. See settings_store
+    # get/save_openrouter_settings.
+    if not _column_exists(conn, "app_settings", "openrouter_api_key_encrypted"):
+        conn.execute("ALTER TABLE app_settings ADD COLUMN openrouter_api_key_encrypted TEXT NOT NULL DEFAULT ''")
+    if not _column_exists(conn, "app_settings", "openrouter_model"):
+        conn.execute("ALTER TABLE app_settings ADD COLUMN openrouter_model TEXT NOT NULL DEFAULT ''")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a

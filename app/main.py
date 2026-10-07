@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from . import auth, db, pp_report, resource_planning, scheduler, settings_store
+from . import auth, db, openrouter_client, pp_report, resource_planning, scheduler, settings_store
 from .logging_config import LOG_PATH, logger, setup_logging
 from .redmine_client import (
     EDITABLE_FIELD_IDS,
@@ -54,12 +54,29 @@ NAV_BY_TEMPLATE = {
 }
 
 
+# OpenRouter's model list is public but a touch slow to fetch — cache it
+# in-process for an hour so re-rendering App Settings doesn't re-hit the network.
+_OR_MODELS_CACHE = {"ts": 0.0, "models": []}
+
+
+def _openrouter_models():
+    import time
+    if not _OR_MODELS_CACHE["models"] or (time.time() - _OR_MODELS_CACHE["ts"]) > 3600:
+        _OR_MODELS_CACHE["models"] = openrouter_client.fetch_models()
+        _OR_MODELS_CACHE["ts"] = time.time()
+    return _OR_MODELS_CACHE["models"]
+
+
 class templates:
     @staticmethod
     def TemplateResponse(name: str, context: dict, status_code: int = 200):
         context = dict(context)
         context.pop("request", None)
         context.setdefault("nav_active", NAV_BY_TEMPLATE.get(name))
+        if name == "app_settings.html":
+            ors = settings_store.get_openrouter_settings()
+            context.setdefault("openrouter", {"model": ors["model"], "api_key": "•" * 12 if ors["api_key"] else ""})
+            context.setdefault("openrouter_models", _openrouter_models())
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -298,6 +315,32 @@ def app_settings_form(request: Request):
         "request": request, "user": user, "settings": settings, "error": None, "ok": None,
         **_refresh_timing_context(),
     })
+
+
+@app.post("/app-settings/openrouter", response_class=HTMLResponse)
+def app_settings_openrouter_submit(request: Request, openrouter_api_key: str = Form(""), openrouter_model: str = Form(""), action: str = Form("")):
+    """Save (or test) the OpenRouter API key + model used for AI features. The
+    key is stored encrypted; leaving it blank keeps the saved one. 'Test' only
+    validates the key (no tokens spent)."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+
+    settings = settings_store.get_app_settings()
+    settings["api_key"] = "•" * 12 if settings["api_key"] else ""
+    base = {"request": request, "user": user, "settings": settings, **_refresh_timing_context()}
+
+    if action == "test":
+        existing = settings_store.get_openrouter_settings()
+        key_to_test = openrouter_api_key.strip() or existing["api_key"]
+        ok_conn, msg = openrouter_client.test_connection(key_to_test)
+        return templates.TemplateResponse("app_settings.html", {**base, "error": None if ok_conn else msg, "ok": msg if ok_conn else None})
+
+    settings_store.save_openrouter_settings(openrouter_api_key.strip(), openrouter_model)
+    logger.info("OpenRouter settings saved by %r (model=%r, key %s)", user["username"], openrouter_model.strip(), "updated" if openrouter_api_key.strip() else "unchanged")
+    return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "OpenRouter settings saved."})
 
 
 @app.post("/app-settings/reset-stuck-refresh", response_class=HTMLResponse)

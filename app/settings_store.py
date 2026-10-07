@@ -250,6 +250,41 @@ def save_app_settings(redmine_url: str, api_key: str, all_statuses_query_id: str
         )
 
 
+def get_openrouter_settings() -> dict:
+    """OpenRouter API key (decrypted) and chosen model id, for AI features.
+    The key is treated as unset if it can't be decrypted (app secret changed),
+    same as the Redmine key."""
+    with db.get_db() as conn:
+        row = conn.execute("SELECT openrouter_api_key_encrypted, openrouter_model FROM app_settings WHERE id = 1").fetchone()
+        if not row:
+            return {"api_key": "", "model": ""}
+        api_key = ""
+        if row["openrouter_api_key_encrypted"]:
+            try:
+                api_key = crypto.decrypt(row["openrouter_api_key_encrypted"])
+            except InvalidToken:
+                logger.error("Stored OpenRouter API key could not be decrypted (app secret changed) — treating it as unset.")
+        return {"api_key": api_key, "model": row["openrouter_model"] or ""}
+
+
+def save_openrouter_settings(api_key: str, model: str):
+    """Saves the OpenRouter model always; updates the API key only when a new
+    one is supplied (blank keeps the stored key), mirroring the Redmine key."""
+    encrypted = crypto.encrypt(api_key) if api_key else ""
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, openrouter_api_key_encrypted, openrouter_model, updated_on)
+            VALUES (1, ?, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                openrouter_api_key_encrypted = CASE WHEN excluded.openrouter_api_key_encrypted = '' THEN app_settings.openrouter_api_key_encrypted ELSE excluded.openrouter_api_key_encrypted END,
+                openrouter_model = excluded.openrouter_model,
+                updated_on = datetime('now')
+            """,
+            (encrypted, (model or "").strip()),
+        )
+
+
 def get_user_prefs(user_id: int) -> dict:
     with db.get_db() as conn:
         row = conn.execute("SELECT my_team_ids, manager_id FROM user_prefs WHERE user_id = ?", (user_id,)).fetchone()
