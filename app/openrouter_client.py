@@ -38,20 +38,30 @@ class OpenRouterError(Exception):
     pass
 
 
-def chat(api_key: str, model: str, messages: list, timeout: int = 60, max_tokens: int = 900) -> str:
-    """One chat completion via OpenRouter; returns the assistant text. Raises
+def chat(api_key: str, models, messages: list, timeout: int = 60, max_tokens: int = 900) -> dict:
+    """One chat completion via OpenRouter with model fallback. `models` is a
+    list (primary first, then fallbacks, max 3) or a single model string;
+    OpenRouter tries them in order if one is down/rate-limited/refuses. Returns
+    {text, model} where model is the one that actually answered. Raises
     OpenRouterError with a user-facing message on failure."""
     if not api_key:
         raise OpenRouterError("No OpenRouter API key configured (App Settings → OpenRouter).")
-    if not model:
-        raise OpenRouterError("No OpenRouter model selected (App Settings → OpenRouter).")
+    model_list = [m for m in ([models] if isinstance(models, str) else list(models or [])) if m][:3]
+    if not model_list:
+        raise OpenRouterError("No OpenRouter model configured (App Settings → OpenRouter).")
+
+    body = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.3}
+    # OpenRouter takes a single `model`, or a `models` array for ordered fallback.
+    if len(model_list) == 1:
+        body["model"] = model_list[0]
+    else:
+        body["models"] = model_list
     try:
         resp = requests.post(
             f"{BASE_URL}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
                      "HTTP-Referer": "https://erm.seidor", "X-Title": "ERM Project Ledger"},
-            json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3},
-            timeout=timeout,
+            json=body, timeout=timeout,
         )
     except Exception as e:
         raise OpenRouterError(f"Could not reach OpenRouter: {e}")
@@ -63,7 +73,8 @@ def chat(api_key: str, model: str, messages: list, timeout: int = 60, max_tokens
             detail = resp.text[:200]
         raise OpenRouterError(f"OpenRouter error (HTTP {resp.status_code}): {detail}")
     try:
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        data = resp.json()
+        return {"text": data["choices"][0]["message"]["content"].strip(), "model": data.get("model") or model_list[0]}
     except (KeyError, IndexError, ValueError):
         raise OpenRouterError("OpenRouter returned an unexpected response shape.")
 

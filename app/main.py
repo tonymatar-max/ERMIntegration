@@ -76,7 +76,6 @@ class templates:
         if name == "app_settings.html":
             ors = settings_store.get_openrouter_settings()
             context.setdefault("openrouter", {"model": ors["model"], "api_key": "•" * 12 if ors["api_key"] else ""})
-            context.setdefault("openrouter_models", _openrouter_models())
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -1178,8 +1177,8 @@ async def api_ai_summary(request: Request):
     if not user:
         return JSONResponse(status_code=401, content={"detail": "Not logged in."})
     ors = settings_store.get_openrouter_settings()
-    if not ors["api_key"] or not ors["model"]:
-        return JSONResponse(status_code=400, content={"detail": "OpenRouter isn't configured yet — add an API key and pick a model under App Settings → OpenRouter."})
+    if not ors["api_key"] or not ors["models"]:
+        return JSONResponse(status_code=400, content={"detail": "OpenRouter isn't configured yet — add an API key and at least one model under App Settings → OpenRouter."})
     try:
         body = await request.json()
     except Exception:
@@ -1189,8 +1188,8 @@ async def api_ai_summary(request: Request):
     if not stats:
         return JSONResponse(status_code=400, content={"detail": "No figures to summarize."})
     try:
-        text = openrouter_client.chat(
-            ors["api_key"], ors["model"],
+        result = openrouter_client.chat(
+            ors["api_key"], ors["models"],
             [
                 {"role": "system", "content": "You are a delivery-operations analyst for a SAP Business One consulting firm. Be concise, specific and numeric. No preamble, no restating the question."},
                 {"role": "user", "content": _build_ai_summary_prompt(stats, scope)},
@@ -1198,8 +1197,8 @@ async def api_ai_summary(request: Request):
         )
     except openrouter_client.OpenRouterError as e:
         return JSONResponse(status_code=502, content={"detail": str(e)})
-    logger.info("AI summary generated for %r via %s", user["username"], ors["model"])
-    return JSONResponse(content={"summary": text, "model": ors["model"]})
+    logger.info("AI summary generated for %r via %s", user["username"], result["model"])
+    return JSONResponse(content={"summary": result["text"], "model": result["model"]})
 
 
 @app.post("/api/refresh")

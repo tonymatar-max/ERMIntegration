@@ -96,17 +96,9 @@
     <input type="password" name="openrouter_api_key" placeholder="{{ 'Leave blank to keep the saved key' if openrouter.api_key else 'sk-or-v1-…' }}">
     <p class="hint">Create one at openrouter.ai &rarr; Keys. Leave blank to keep the current key.</p>
 
-    <label>Model</label>
-    <select name="openrouter_model">
-      <option value="">&mdash; Select a model &mdash;</option>
-      {% if openrouter.model and openrouter.model not in openrouter_models %}
-        <option value="{{ openrouter.model }}" selected>{{ openrouter.model }} (saved)</option>
-      {% endif %}
-      {% for m in openrouter_models %}
-        <option value="{{ m }}" {{ 'selected' if m == openrouter.model else '' }}>{{ m }}</option>
-      {% endfor %}
-    </select>
-    <p class="hint">{{ openrouter_models|length }} model(s) available from OpenRouter. The saved model is kept at the top if it isn't in the live list.</p>
+    <label>Model(s)</label>
+    <textarea name="openrouter_model" rows="3" style="width:100%; padding:0.55rem 0.7rem; border:1px solid var(--seidor-border); border-radius:0.4rem; font-size:0.9rem; font-family:'IBM Plex Mono', ui-monospace, monospace; box-sizing:border-box; resize:vertical;" placeholder="anthropic/claude-3.5-sonnet&#10;openai/gpt-4o-mini&#10;google/gemini-flash-1.5">{{ openrouter.model }}</textarea>
+    <p class="hint">One model per line (or comma-separated), <strong>up to 3</strong> (OpenRouter's limit). The first is primary; if it's down, rate-limited or refuses, OpenRouter falls back to the next. Browse ids at <a href="https://openrouter.ai/models" target="_blank" rel="noopener">openrouter.ai/models</a>. Text/chat models only.</p>
 
     <div class="row">
       <button type="submit">Save OpenRouter settings</button>

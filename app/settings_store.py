@@ -264,7 +264,21 @@ def get_openrouter_settings() -> dict:
                 api_key = crypto.decrypt(row["openrouter_api_key_encrypted"])
             except InvalidToken:
                 logger.error("Stored OpenRouter API key could not be decrypted (app secret changed) — treating it as unset.")
-        return {"api_key": api_key, "model": row["openrouter_model"] or ""}
+        model_text = row["openrouter_model"] or ""
+        return {"api_key": api_key, "model": model_text, "models": parse_openrouter_models(model_text)}
+
+
+def parse_openrouter_models(text: str) -> list:
+    """Parse the model list — one per line or comma-separated — into an ordered,
+    de-duplicated list of at most 3 (OpenRouter's fallback limit). The first is
+    primary; the rest are fallbacks OpenRouter tries in order."""
+    parts, seen = [], set()
+    for chunk in (text or "").replace(",", "\n").splitlines():
+        m = chunk.strip()
+        if m and m.lower() not in seen:
+            seen.add(m.lower())
+            parts.append(m)
+    return parts[:3]
 
 
 def save_openrouter_settings(api_key: str, model: str):
