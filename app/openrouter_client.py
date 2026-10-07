@@ -74,8 +74,22 @@ def chat(api_key: str, models, messages: list, timeout: int = 60, max_tokens: in
         raise OpenRouterError(f"OpenRouter error (HTTP {resp.status_code}): {detail}")
     try:
         data = resp.json()
-        return {"text": data["choices"][0]["message"]["content"].strip(), "model": data.get("model") or model_list[0]}
-    except (KeyError, IndexError, ValueError):
+        msg = (data.get("choices") or [{}])[0].get("message") or {}
+        # Some models return null content (reasoning-only models, or non-chat
+        # models like rerankers/embeddings that shouldn't be used here).
+        content = msg.get("content")
+        if content is None:
+            content = msg.get("reasoning")
+        if not content or not str(content).strip():
+            raise OpenRouterError(
+                "The model returned no text. Make sure the model is a text/chat "
+                "model (not a reranker, embedding, or audio/image model) — check "
+                "App Settings → OpenRouter."
+            )
+        return {"text": str(content).strip(), "model": data.get("model") or model_list[0]}
+    except OpenRouterError:
+        raise
+    except (KeyError, IndexError, ValueError, AttributeError, TypeError):
         raise OpenRouterError("OpenRouter returned an unexpected response shape.")
 
 
