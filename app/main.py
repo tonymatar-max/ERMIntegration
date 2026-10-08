@@ -5,6 +5,8 @@ import re
 import sqlite3
 
 import jinja2
+from urllib.parse import quote
+
 from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
@@ -1987,7 +1989,7 @@ def pp_report_country_project_export(month: str, request: Request):
 # ---------------------------------------------------------------------------
 
 @app.get("/resource-planning", response_class=HTMLResponse)
-def resource_planning_page(request: Request):
+def resource_planning_page(request: Request, import_ok: str = "", import_error: str = ""):
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
@@ -2005,11 +2007,14 @@ def resource_planning_page(request: Request):
     rows = resource_planning.build_plan(projects, timespent, months)
     summary = resource_planning.consultant_summary(rows, months)
     roster = settings_store.distinct_timesheet_users(timespent)
+    my_team_ids = [t.strip() for t in settings_store.get_user_prefs(user["id"])["my_team_ids"].split(",") if t.strip()]
 
     return templates.TemplateResponse("resource_planning.html", {
         "request": request, "user": user, "fetched_on": fetched_on,
         "months": months, "month_labels": [resource_planning.format_month_label(m) for m in months],
         "rows": rows, "summary": summary, "roster": roster,
+        "my_team_ids": my_team_ids,
+        "import_ok": import_ok, "import_error": import_error,
         **_refresh_timing_context(),
     })
 
@@ -2162,6 +2167,39 @@ def resource_planning_export(request: Request):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/resource-planning/import")
+async def resource_planning_import(request: Request, file: UploadFile = File(...)):
+    """Import planned hours from a previously-exported plan workbook (its
+    'Detail' sheet, keyed on the Project ID / User ID columns). Only the month
+    columns matching the current window are applied; closed/removed projects in
+    the file that aren't plannable now are still written (harmless — they just
+    won't surface), so round-tripping an export is lossless for the user."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+
+    months = resource_planning.plan_months()
+    try:
+        data = await file.read()
+        cells, stats = resource_planning.parse_resource_plan_workbook(data, months)
+    except resource_planning.ImportError_ as e:
+        return RedirectResponse(f"/resource-planning?import_error={quote(str(e))}", status_code=302)
+    except Exception as e:
+        logger.exception("Resource Planning import failed for %r", user["username"])
+        return RedirectResponse(f"/resource-planning?import_error={quote('Unexpected error reading the file: ' + str(e))}", status_code=302)
+
+    if not cells:
+        return RedirectResponse(f"/resource-planning?import_error={quote('No rows to import were found in the file.')}", status_code=302)
+
+    resource_planning.save_planned_hours_batch(cells)
+    logger.info("Resource Planning imported by %r: %d cells across %d row(s), %d skipped",
+                user["username"], stats["cells"], stats["rows"], stats["skipped"])
+    msg = f"Imported {stats['rows']} project row(s) across {stats['months_matched']} month(s)."
+    if stats["skipped"]:
+        msg += f" {stats['skipped']} row(s) without a Project/User ID were skipped."
+    return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 
 class ResourcePlanCellUpdate(BaseModel):

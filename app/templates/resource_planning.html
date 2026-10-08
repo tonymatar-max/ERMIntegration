@@ -130,6 +130,9 @@
     {% if fetched_on %}Based on the Redmine data cached as of <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on }}"></span>.{% endif %}
   </p>
 
+  {% if import_ok %}<div class="msg ok">{{ import_ok }}</div>{% endif %}
+  {% if import_error %}<div class="msg error">{{ import_error }}</div>{% endif %}
+
   <div class="rp-toolbar">
     <div class="rp-field">
       <label for="rp-search">Search</label>
@@ -139,6 +142,10 @@
     <span class="rp-hint" id="rp-save-progress" hidden>Saving&hellip;</span>
     <button class="rp-btn rp-btn-secondary" id="rp-export-btn" type="button">Export to Excel</button>
     <span class="rp-hint" id="rp-export-progress" hidden>Generating&hellip;</span>
+    <form method="post" action="/resource-planning/import" enctype="multipart/form-data" id="rp-import-form" style="display:inline;margin:0;">
+      <input type="file" name="file" id="rp-import-file" accept=".xlsx" hidden>
+      <button class="rp-btn rp-btn-secondary" id="rp-import-btn" type="button" title="Import planned hours from a previously-exported plan">Import from Excel</button>
+    </form>
     <button class="rp-toggle-all" id="rp-expand-all" type="button">Expand all</button>
     <button class="rp-toggle-all" id="rp-collapse-all" type="button">Collapse all</button>
     <span class="rp-hint" id="rp-count-hint"></span>
@@ -174,6 +181,11 @@
 
     <button class="rp-toggle-filter" id="rp-filter-fully-planned" type="button">
       <input type="checkbox" style="accent-color:var(--seidor-blue); pointer-events:none;"> Hide fully planned
+    </button>
+
+    <button class="rp-toggle-filter" id="rp-filter-my-team" type="button"
+            {% if not my_team_ids %}disabled title="Set your team under Settings → My Team first"{% else %}title="Show only the consultants in your team"{% endif %}>
+      <input type="checkbox" style="accent-color:var(--seidor-blue); pointer-events:none;"> My team only
     </button>
 
     <div class="rp-active-filters" id="rp-active-filters"></div>
@@ -283,7 +295,7 @@
       </div>
     </div>
     {% else %}
-    <p class="rp-hint">No projects with remaining estimated hours and a known consultant.</p>
+    <p class="rp-hint">No open projects with a known consultant to plan.</p>
     {% endfor %}
   </div>
 </div>
@@ -292,6 +304,7 @@
 <script>
 const RP_ROSTER = {{ roster | tojson }};
 const RP_MONTHS = {{ months | tojson }};
+const RP_MY_TEAM_IDS = {{ my_team_ids | tojson }};
 </script>
 
 <script>
@@ -317,6 +330,8 @@ const RP_MONTHS = {{ months | tojson }};
   const filterCountries = new Set();
   const filterCapacity = new Set();
   let filterFullyPlanned = false;
+  let filterMyTeam = false;
+  const myTeamIds = new Set((RP_MY_TEAM_IDS || []).map(String));
 
   // ---------- Country filter setup ----------
   const allCountries = new Set();
@@ -373,6 +388,17 @@ const RP_MONTHS = {{ months | tojson }};
     applyFilter();
   });
 
+  // ---------- My team toggle ----------
+  const myTeamBtn = document.getElementById('rp-filter-my-team');
+  if (myTeamBtn && !myTeamBtn.disabled) {
+    myTeamBtn.addEventListener('click', () => {
+      filterMyTeam = !filterMyTeam;
+      myTeamBtn.classList.toggle('active', filterMyTeam);
+      myTeamBtn.querySelector('input').checked = filterMyTeam;
+      applyFilter();
+    });
+  }
+
   // ---------- Dropdown open/close ----------
   document.querySelectorAll('.rp-filter-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -416,6 +442,11 @@ const RP_MONTHS = {{ months | tojson }};
     let visibleCards = 0;
 
     cards.forEach(card => {
+      // My team filter — card's consultant must be in the user's team
+      if (filterMyTeam && !myTeamIds.has(String(card.dataset.userId))) {
+        card.hidden = true; return;
+      }
+
       // Capacity filter
       if (filterCapacity.size) {
         const status = getCardCapacityStatus(card);
@@ -819,28 +850,12 @@ const RP_MONTHS = {{ months | tojson }};
         });
         if (!resp.ok) throw new Error((await resp.json()).detail || 'Save failed');
 
-        const totalsByProject = {};
-        const remainingByProject = {};
-        document.querySelectorAll('tr[data-project-id]').forEach(row => {
-          const projectId = row.dataset.projectId;
-          remainingByProject[projectId] = parseFloat(row.dataset.remaining) || 0;
-          let rowTotal = 0;
-          row.querySelectorAll('.rp-hours-input').forEach(input => { rowTotal += parseFloat(input.value) || 0; });
-          totalsByProject[projectId] = (totalsByProject[projectId] || 0) + rowTotal;
-        });
-        const overBudget = [];
-        for (const projectId in totalsByProject) {
-          if (totalsByProject[projectId] > remainingByProject[projectId] + 0.05) {
-            const row = document.querySelector(`tr[data-project-id="${projectId}"]`);
-            const name = row.dataset.projectName.trim();
-            overBudget.push(`${name}: ${totalsByProject[projectId].toFixed(1)}h planned vs ${remainingByProject[projectId].toFixed(1)}h remaining`);
-          }
-        }
+        // Over-resourcing is intentionally not blocked or warned on — a
+        // consultant can be planned beyond a project's remaining estimate
+        // (the estimate may yet be raised) and beyond their own capacity; the
+        // capacity bars flag it visually, which is enough.
         saveBtn.textContent = 'Saved ✓';
         setTimeout(() => { saveBtn.textContent = 'Save all'; }, 2000);
-        if (overBudget.length) {
-          alert(`Saved — but ${overBudget.length} project(s) exceed remaining hours:\n\n${overBudget.join('\n')}`);
-        }
       } catch (e) {
         alert(e.message || 'Could not save.');
       } finally {
@@ -874,6 +889,23 @@ const RP_MONTHS = {{ months | tojson }};
       } finally {
         exportBtn.disabled = false;
         if (exportProgress) exportProgress.hidden = true;
+      }
+    });
+  }
+
+  // ---------- Import ----------
+  const importBtn = document.getElementById('rp-import-btn');
+  const importFile = document.getElementById('rp-import-file');
+  const importForm = document.getElementById('rp-import-form');
+  if (importBtn && importFile && importForm) {
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', () => {
+      if (!importFile.files.length) return;
+      if (confirm(`Import planned hours from "${importFile.files[0].name}"?\n\nThis overwrites the planned hours for every project/consultant row in the file.`)) {
+        importBtn.disabled = true; importBtn.textContent = 'Importing…';
+        importForm.submit();
+      } else {
+        importFile.value = '';
       }
     });
   }

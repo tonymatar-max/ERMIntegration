@@ -252,8 +252,12 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
         estimated = p.get("est") or 0.0
         spent = p.get("spent") or 0.0
         remaining = estimated - spent
-        if remaining <= 0:
-            continue
+        # Open projects stay on the plan even once their estimate is used up
+        # (remaining <= 0): the team may still need to log more time against
+        # them, so they must remain plannable. Nothing is auto-filled for them
+        # (the capacity-fill loop below allocates 0 when remaining <= 0), but
+        # the row appears so hours can be entered by hand. Only Closed and T&M
+        # projects are left out.
 
         assignee = assignee_overrides.get(p["id"]) or _most_recent_assignee(p["id"], timespent)
         if assignee is None:
@@ -522,16 +526,20 @@ def build_resource_plan_workbook(months: list, rows: list, summary: list) -> byt
     summary_ws.freeze_panes = "A2"
 
     detail_ws = wb.create_sheet("Detail")
-    detail_ws.append(["Consultant", "Project", "Rapport Code", "Remaining Est. Hours"] + month_labels)
+    # Project ID / User ID are carried (as the first two columns) so the file
+    # can be edited and re-imported with exact matching — see
+    # parse_resource_plan_workbook. Edit only the month columns; leave the ids,
+    # names and header row intact.
+    detail_ws.append(["Project ID", "User ID", "Consultant", "Project", "Rapport Code", "Remaining Est. Hours"] + month_labels)
     for cell in detail_ws[1]:
         cell.font = bold
     for r in rows:
-        detail_ws.append([r["userName"], r["projectName"], r["rapportCode"], r["remaining"]] + [r["monthly"].get(m, 0.0) for m in months])
-    widths = [22, 45, 20, 16] + [14] * len(months)
+        detail_ws.append([r["projectId"], r["userId"], r["userName"], r["projectName"], r["rapportCode"], r["remaining"]] + [r["monthly"].get(m, 0.0) for m in months])
+    widths = [10, 9, 22, 45, 20, 16] + [14] * len(months)
     for i, width in enumerate(widths, start=1):
         detail_ws.column_dimensions[get_column_letter(i)].width = width
     detail_ws.freeze_panes = "A2"
-    detail_ws.auto_filter.ref = f"A1:{get_column_letter(4 + len(months))}{detail_ws.max_row}"
+    detail_ws.auto_filter.ref = f"A1:{get_column_letter(6 + len(months))}{detail_ws.max_row}"
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -560,3 +568,94 @@ def consultant_summary(rows: list, months: list) -> list:
 
     summary.sort(key=lambda e: e["userName"].lower())
     return summary
+
+
+class ImportError_(Exception):
+    """Raised by parse_resource_plan_workbook when the file can't be read."""
+
+
+def parse_resource_plan_workbook(file_bytes: bytes, months: list) -> tuple:
+    """Read an exported Resource Planning .xlsx back into planned-hours cells.
+
+    Reads the 'Detail' sheet (as produced by build_resource_plan_workbook):
+    columns 'Project ID', 'User ID', then the month columns matched to the
+    current `months` by their header label. Only month columns whose label
+    matches one of `months` are imported, so a file exported for a different
+    window still imports the overlapping months. Rows without a numeric Project
+    ID and User ID are skipped.
+
+    Returns (cells, stats) where cells is a list of
+    {project_id, user_id, month, hours} ready for save_planned_hours_batch,
+    and stats is {rows, cells, skipped, months_matched}."""
+    import io
+
+    from openpyxl import load_workbook
+
+    try:
+        wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+    except Exception as e:
+        raise ImportError_(f"Couldn't open the file as an Excel workbook: {e}")
+
+    ws = wb["Detail"] if "Detail" in wb.sheetnames else wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header = next(rows_iter)
+    except StopIteration:
+        raise ImportError_("The sheet is empty.")
+
+    header = [("" if h is None else str(h)).strip() for h in header]
+    label_to_month = {format_month_label(m): m for m in months}
+    # Map each spreadsheet column index to a month key (only those we plan for).
+    col_month = {}
+    pid_col = uid_col = None
+    for idx, h in enumerate(header):
+        if h == "Project ID":
+            pid_col = idx
+        elif h == "User ID":
+            uid_col = idx
+        elif h in label_to_month:
+            col_month[idx] = label_to_month[h]
+
+    if pid_col is None or uid_col is None:
+        raise ImportError_(
+            "This doesn't look like an exported plan — the 'Detail' sheet is "
+            "missing the 'Project ID' / 'User ID' columns. Export the plan "
+            "first, edit the month columns, then import that same file.")
+    if not col_month:
+        raise ImportError_(
+            "None of the month columns in the file match the current planning "
+            "window. Re-export the plan and edit that file.")
+
+    def _to_int(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+
+    def _to_hours(v):
+        if v in (None, ""):
+            return 0.0
+        try:
+            return max(0.0, float(v))
+        except (TypeError, ValueError):
+            return 0.0
+
+    cells = []
+    seen_rows = skipped = 0
+    for raw in rows_iter:
+        if raw is None:
+            continue
+        pid = _to_int(raw[pid_col]) if pid_col < len(raw) else None
+        uid = _to_int(raw[uid_col]) if uid_col < len(raw) else None
+        if pid is None or uid is None:
+            if any(c not in (None, "") for c in raw):
+                skipped += 1
+            continue
+        seen_rows += 1
+        for col, month in col_month.items():
+            hours = _to_hours(raw[col]) if col < len(raw) else 0.0
+            cells.append({"project_id": pid, "user_id": uid, "month": month, "hours": hours})
+
+    wb.close()
+    return cells, {"rows": seen_rows, "cells": len(cells),
+                   "skipped": skipped, "months_matched": len(col_month)}
