@@ -2228,6 +2228,7 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
             key_to_ids.setdefault(k, set()).add(uid)
     # Keep only unambiguous keys.
     user_by_name = {k: next(iter(ids)) for k, ids in key_to_ids.items() if len(ids) == 1}
+    uid_name = dict(names_by_id)
 
     try:
         data = await file.read()
@@ -2246,10 +2247,11 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
             hint += f" {stats['unresolved_project']} couldn't match a project, {stats['unresolved_user']} a consultant."
         return RedirectResponse(f"/resource-planning?import_error={quote(hint)}", status_code=302)
 
-    resource_planning.save_planned_hours_batch(cells)
-    logger.info("Resource Planning imported by %r (%s mode): %d cells across %d row(s), %d skipped",
-                user["username"], stats["mode"], stats["cells"], stats["rows"], stats["skipped"])
-    msg = f"Imported {stats['rows']} project row(s) across {stats['months_matched']} month(s)."
+    applied = resource_planning.apply_imported_plan(cells, uid_name, months)
+    logger.info("Resource Planning imported by %r (%s mode): %d cells, %d projects, %d splits, %d skipped",
+                user["username"], stats["mode"], stats["cells"], applied["projects"], applied["splits"], stats["skipped"])
+    msg = (f"Imported {stats['rows']} project row(s) across {stats['months_matched']} month(s) "
+           f"onto {applied['projects']} project(s).")
     if stats["skipped"]:
         msg += (f" {stats['skipped']} row(s) skipped"
                 f" ({stats['unresolved_project']} no project match,"

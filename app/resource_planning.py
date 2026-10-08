@@ -216,6 +216,51 @@ def save_planned_hours_batch(cells: list):
             )
 
 
+def apply_imported_plan(cells: list, uid_name: dict, months: list) -> dict:
+    """Persist an imported plan AND make every imported (project, consultant)
+    pair actually appear on the grid.
+
+    The grid shows one assignee per project (its reassignment override, else the
+    most-recent logger, else the PM) plus any registered split rows. So saving
+    hours for an arbitrary consultant isn't enough — if they aren't that
+    project's assignee, their row never renders (and never exports). This
+    registers them: per project, the consultant with the most imported hours
+    becomes the assignee, and every other imported consultant on that project is
+    added as a split row.
+
+    Every window month is written for each imported pair (0 where the file had
+    no value), so a project reassigned to a new consultant doesn't auto-fill the
+    months the file didn't mention — the imported plan is taken literally.
+    `cells` is a parse_resource_plan_workbook() result; `uid_name` maps user id
+    -> display name. Returns a small stats dict."""
+    from collections import defaultdict
+    per = defaultdict(lambda: defaultdict(lambda: {m: 0.0 for m in months}))  # pid -> uid -> {month: hours}
+    for c in cells:
+        if c["month"] in months:
+            per[c["project_id"]][c["user_id"]][c["month"]] = c["hours"]
+
+    # Persist every window month for each imported pair (0 where unspecified),
+    # so the reassigned/normal row never auto-fills a blank month.
+    full_cells = [
+        {"project_id": pid, "user_id": uid, "month": m, "hours": monthly[m]}
+        for pid, users in per.items() for uid, monthly in users.items() for m in months
+    ]
+    save_planned_hours_batch(full_cells)
+
+    assignees = splits = 0
+    for pid, users in per.items():
+        # Primary = whoever has the most imported hours (stable tie-break).
+        primary = max(users, key=lambda u: (sum(users[u].values()), -u))
+        save_assignee_override(pid, primary, uid_name.get(primary, ""))
+        assignees += 1
+        for uid, monthly in users.items():
+            if uid == primary:
+                continue
+            add_extra_assignee(pid, uid, uid_name.get(uid, ""), monthly)
+            splits += 1
+    return {"projects": len(per), "assignees": assignees, "splits": splits}
+
+
 def build_plan(projects: list, timespent: list, months: list = None) -> list:
     """One row per (project, assigned consultant) with a planned_hours
     figure for each month in `months` (defaults to plan_months(), now 6
