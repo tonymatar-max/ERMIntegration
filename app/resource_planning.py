@@ -269,10 +269,10 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
             else:
                 continue
 
-        plannable_projects[p["id"]] = {"name": p.get("name"), "rapportCode": p.get("rapportCode"), "country": p.get("country"), "remaining": remaining}
+        plannable_projects[p["id"]] = {"name": p.get("name"), "rapportCode": p.get("rapportCode"), "country": p.get("country"), "remaining": remaining, "est": estimated, "spent": spent}
         by_user.setdefault(assignee["id"], {"userName": assignee["name"], "projects": []})["projects"].append({
             "projectId": p["id"], "projectName": p.get("name"), "rapportCode": p.get("rapportCode"),
-            "country": p.get("country"), "remaining": remaining,
+            "country": p.get("country"), "remaining": remaining, "est": estimated, "spent": spent,
         })
 
     rows = []
@@ -312,6 +312,9 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
                 "userId": user_id,
                 "userName": user_data["userName"],
                 "remaining": pr["remaining"],
+                "est": pr["est"],
+                "spent": pr["spent"],
+                "overBudget": pr["est"] > 0 and pr["spent"] >= pr["est"],
                 "monthly": monthly,
                 "isSplit": pr["projectId"] in extra_assignees,
                 "isExtraRow": False,
@@ -335,6 +338,9 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
                 "userId": extra["id"],
                 "userName": extra["name"],
                 "remaining": project["remaining"],
+                "est": project["est"],
+                "spent": project["spent"],
+                "overBudget": project["est"] > 0 and project["spent"] >= project["est"],
                 "monthly": monthly,
                 "isSplit": True,
                 "isExtraRow": True,
