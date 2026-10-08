@@ -547,9 +547,10 @@ def list_employees():
 
 
 def get_employee_rates() -> dict:
-    """redmine_user_id -> hourly_rate, for every consultant with a saved
-    rate. Not yet consumed by any report calculation — see the employees
-    table's own comment in db.py."""
+    """redmine_user_id -> hourly_rate, for every consultant with a saved rate.
+    Consumed by pp_report.consultant_cost_till_date to cost each project's
+    Cost till Date / profitability at each consultant's own rate (falling back
+    to the country Daily Rate for consultants without a saved rate)."""
     with db.get_db() as conn:
         rows = conn.execute("SELECT redmine_user_id, hourly_rate FROM employees").fetchall()
         return {r["redmine_user_id"]: r["hourly_rate"] for r in rows}
