@@ -232,10 +232,26 @@ def _digest_tick():
         logger.warning("Weekly digest failed (won't retry until next week): %s", e)
 
 
+def _backup_tick():
+    """Take one automatic DB backup per day (first scheduler tick on/after
+    03:00 server-local that hasn't already backed up today). Cheap insurance
+    against accidental data loss; old backups are pruned by backup.create_backup."""
+    from . import backup
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    if backup.last_auto_backup_date() == today or now.hour < 3:
+        return
+    try:
+        backup.create_backup("auto-daily")
+        backup.mark_auto_backup(today)
+    except Exception as e:
+        logger.warning("Daily DB backup failed: %s", e)
+
+
 async def run_forever():
     """Started once at app startup (see main.py) and runs for the life of
     the process, checking every CHECK_INTERVAL_SECONDS whether the next
-    scheduled run (refresh or weekly digest) is due."""
+    scheduled run (refresh, weekly digest or daily backup) is due."""
     logger.info("Auto-refresh scheduler started (checks every %ss)", CHECK_INTERVAL_SECONDS)
     while True:
         try:
@@ -246,4 +262,8 @@ async def run_forever():
             _digest_tick()
         except Exception:
             logger.exception("Digest tick crashed")
+        try:
+            _backup_tick()
+        except Exception:
+            logger.exception("Backup tick crashed")
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)

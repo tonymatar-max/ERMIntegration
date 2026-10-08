@@ -170,6 +170,31 @@
   </form>
 </div>
 
+<div class="wrap wide">
+  <h1>Database backup</h1>
+  <p class="hint">Take a consistent snapshot of the whole database (users, settings, PP Report locks, KSA data, resource plans &mdash; everything). An automatic backup is also taken once a day and before any plan clear/generate/import. The last {{ backups|length }} are listed; older ones are pruned.{% if backup_last_auto %} Last automatic backup: <strong>{{ backup_last_auto }}</strong>.{% endif %}</p>
+  <form method="post" action="/app-settings/backup">
+    <button type="submit">Back up now</button>
+  </form>
+  {% if backups %}
+  <table class="data-table" style="margin-top:1rem;">
+    <thead><tr><th>Backup file</th><th>Size</th><th>Taken</th><th></th></tr></thead>
+    <tbody>
+      {% for b in backups %}
+      <tr>
+        <td style="font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:0.82rem;">{{ b.name }}</td>
+        <td>{{ "%.1f"|format(b.size / 1048576) }} MB</td>
+        <td><span class="local-time" data-format="full" data-utc-iso="{{ b.modified }}"></span></td>
+        <td><a href="/app-settings/backup/download/{{ b.name }}">Download</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint" style="margin-top:0.8rem;">No backups yet &mdash; click &ldquo;Back up now&rdquo; to create the first one.</p>
+  {% endif %}
+</div>
+
 <script>
 (function() {
   const modeSelect = document.getElementById('ar-mode');

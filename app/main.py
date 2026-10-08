@@ -8,10 +8,10 @@ import jinja2
 from urllib.parse import quote
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from . import analysis, auth, data_quality, db, digest, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
+from . import analysis, auth, backup, data_quality, db, digest, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
 from .logging_config import LOG_PATH, logger, setup_logging
 from .redmine_client import (
     EDITABLE_FIELD_IDS,
@@ -85,6 +85,8 @@ class templates:
             context.setdefault("smtp", {**smtp, "password": "•" * 12 if smtp["password"] else ""})
             context.setdefault("digest", settings_store.get_digest_settings())
             context.setdefault("digest_recipient_count", len(digest.recipients()))
+            context.setdefault("backups", backup.list_backups()[:10])
+            context.setdefault("backup_last_auto", backup.last_auto_backup_date())
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -349,6 +351,41 @@ def app_settings_form(request: Request):
         "request": request, "user": user, "settings": settings, "error": None, "ok": None,
         **_refresh_timing_context(),
     })
+
+
+@app.post("/app-settings/backup", response_class=HTMLResponse)
+def app_settings_backup_now(request: Request):
+    """Admin: take an immediate, consistent snapshot of the database."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+    settings = settings_store.get_app_settings()
+    settings["api_key"] = "•" * 12 if settings["api_key"] else ""
+    base = {"request": request, "user": user, "settings": settings, **_refresh_timing_context()}
+    try:
+        b = backup.create_backup("manual")
+        mb = b["size"] / (1024 * 1024)
+        return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": f"Backup created: {b['name']} ({mb:.1f} MB)."})
+    except Exception as e:
+        logger.exception("Manual DB backup failed for %r", user["username"])
+        return templates.TemplateResponse("app_settings.html", {**base, "error": f"Backup failed: {e}", "ok": None})
+
+
+@app.get("/app-settings/backup/download/{name}")
+def app_settings_backup_download(name: str, request: Request):
+    """Admin: download a specific backup file."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+    path = backup.backup_path(name)
+    if not path:
+        return JSONResponse(status_code=404, content={"detail": "No such backup."})
+    logger.info("DB backup downloaded by %r: %s", user["username"], name)
+    return FileResponse(path, media_type="application/octet-stream", filename=name)
 
 
 @app.post("/app-settings/digest", response_class=HTMLResponse)
@@ -2247,6 +2284,7 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
             hint += f" {stats['unresolved_project']} couldn't match a project, {stats['unresolved_user']} a consultant."
         return RedirectResponse(f"/resource-planning?import_error={quote(hint)}", status_code=302)
 
+    _safe_backup("pre-import")
     applied = resource_planning.apply_imported_plan(cells, uid_name, months)
     logger.info("Resource Planning imported by %r (%s mode): %d cells, %d projects, %d splits, %d skipped",
                 user["username"], stats["mode"], stats["cells"], applied["projects"], applied["splits"], stats["skipped"])
@@ -2268,6 +2306,7 @@ def resource_planning_clear(request: Request):
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
+    _safe_backup("pre-clear")
     resource_planning.clear_all_plan()
     # Persist explicit 0s for every current plannable cell so nothing auto-fills.
     projects, timespent, _ = _resource_plan_data(user)
@@ -2292,6 +2331,7 @@ def resource_planning_generate(request: Request):
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
+    _safe_backup("pre-generate")
     resource_planning.clear_all_plan()
     projects, timespent, _ = _resource_plan_data(user)
     months = resource_planning.plan_months()
@@ -2304,6 +2344,15 @@ def resource_planning_generate(request: Request):
     logger.info("Resource Planning regenerated+saved by %r: %d rows, %d cells", user["username"], len(rows), len(cells))
     msg = f"Regenerated the auto plan and saved it ({len(rows)} project rows across {len(months)} months)."
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+def _safe_backup(label: str):
+    """Take a DB backup before a destructive action; never let a backup failure
+    block the action itself (it's insurance, not a gate)."""
+    try:
+        backup.create_backup(label)
+    except Exception:
+        logger.exception("Safety backup (%s) failed — continuing anyway", label)
 
 
 def _resource_plan_data(user: dict):
