@@ -185,6 +185,19 @@ def save_planned_hours(project_id: int, user_id: int, month: str, hours: float):
         )
 
 
+def clear_all_plan() -> dict:
+    """Wipe every saved planning override so the plan reverts to the pure
+    auto-generated state: planned-hour cells (resource_plan), manual
+    reassignments (resource_plan_assignee) and split rows
+    (resource_plan_extra_assignee). Returns the row counts removed."""
+    with db.get_db() as conn:
+        counts = {}
+        for table in ("resource_plan", "resource_plan_assignee", "resource_plan_extra_assignee"):
+            counts[table] = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+            conn.execute(f"DELETE FROM {table}")
+    return counts
+
+
 def save_planned_hours_batch(cells: list):
     """Saves every {'project_id':, 'user_id':, 'month':, 'hours':} in
     `cells` in one connection/transaction — the Save button's "save
@@ -587,6 +600,40 @@ def _norm_text(v) -> str:
     return " ".join(str(v or "").strip().lower().split())
 
 
+_MONTH_ABBR = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
+
+
+def _match_header_month(value, months: list, label_to_month: dict):
+    """Resolve one spreadsheet header cell to a planning month key, tolerating
+    the various shapes real files use: the exact export label ('Oct 2026'), a
+    real Excel date cell (datetime), or a bare month name ('Oct', 'October').
+    A bare month name maps to the single window month with that month number
+    (unambiguous because the window is <= 12 months). Returns the month key
+    ('YYYY-MM') or None."""
+    import datetime as _dt
+
+    if isinstance(value, (_dt.datetime, _dt.date)):
+        key = f"{value.year:04d}-{value.month:02d}"
+        return key if key in months else None
+
+    s = str(value or "").strip()
+    if not s:
+        return None
+    if s in label_to_month:
+        return label_to_month[s]
+
+    # Bare month name / abbreviation (no year) -> the window month with that
+    # month number, if exactly one.
+    abbr = s[:3].lower()
+    mnum = _MONTH_ABBR.get(abbr)
+    if mnum:
+        hits = [m for m in months if int(m[5:7]) == mnum]
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+
 def parse_resource_plan_workbook(file_bytes: bytes, months: list,
                                  project_by_code: dict = None,
                                  project_by_name: dict = None,
@@ -626,21 +673,30 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
     except StopIteration:
         raise ImportError_("The sheet is empty.")
 
-    header = [("" if h is None else str(h)).strip() for h in header]
     label_to_month = {format_month_label(m): m for m in months}
+    # Accept common header spellings so hand-built sheets import too.
+    ALIASES = {
+        "project id": "Project ID", "user id": "User ID",
+        "rapport code": "Rapport Code", "project code": "Rapport Code", "code": "Rapport Code",
+        "project": "Project", "project name": "Project",
+        "consultant": "Consultant", "resource": "Consultant", "ressource": "Consultant",
+    }
     col_month = {}
-    cols = {}  # named column -> index
+    cols = {}  # canonical column name -> index
     for idx, h in enumerate(header):
-        if h in ("Project ID", "User ID", "Consultant", "Project", "Rapport Code"):
-            cols[h] = idx
-        elif h in label_to_month:
-            col_month[idx] = label_to_month[h]
+        canon = ALIASES.get(_norm_text(h))
+        if canon and canon not in cols:
+            cols[canon] = idx
+            continue
+        m = _match_header_month(h, months, label_to_month)
+        if m is not None and idx not in col_month:
+            col_month[idx] = m
 
     if not col_month:
         raise ImportError_(
             "None of the month columns in the file match the current planning "
-            "window (" + ", ".join(label_to_month) + "). Re-export the plan and "
-            "edit that file.")
+            "window (" + ", ".join(label_to_month) + "). The month headers can "
+            "be 'Oct 2026', a date, or just 'Oct'.")
 
     id_mode = "Project ID" in cols and "User ID" in cols
     if not id_mode:
@@ -648,8 +704,9 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
         if "Consultant" not in cols or ("Rapport Code" not in cols and "Project" not in cols):
             raise ImportError_(
                 "This sheet needs either 'Project ID' + 'User ID' columns, or a "
-                "'Consultant' column plus a 'Rapport Code' (or 'Project') column "
-                "to match on. Export the plan first and edit that file.")
+                "consultant column (Consultant/Resource) plus a code column "
+                "(Rapport Code/Project Code) or a Project name column to match "
+                "on. Found columns: " + ", ".join(str(h) for h in header if h) + ".")
         project_by_code = project_by_code or {}
         project_by_name = project_by_name or {}
         user_by_name = user_by_name or {}

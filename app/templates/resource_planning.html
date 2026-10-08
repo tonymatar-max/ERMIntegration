@@ -149,6 +149,10 @@
       <input type="file" name="file" id="rp-import-file" accept=".xlsx" hidden>
       <button class="rp-btn rp-btn-secondary" id="rp-import-btn" type="button" title="Import planned hours from an exported plan (matched by Rapport Code and consultant name)">Import from Excel</button>
     </form>
+    <form method="post" action="/resource-planning/clear" id="rp-clear-form" style="display:inline;margin:0;"
+          onsubmit="return confirm('Clear ALL saved planning data (planned hours, reassignments and split rows) and regenerate the plan from scratch?\n\nThis cannot be undone.');">
+      <button class="rp-btn rp-btn-secondary" type="submit" title="Delete all saved planning overrides and regenerate the auto plan">Clear &amp; regenerate</button>
+    </form>
     <button class="rp-toggle-all" id="rp-expand-all" type="button">Expand all</button>
     <button class="rp-toggle-all" id="rp-collapse-all" type="button">Collapse all</button>
     <span class="rp-hint" id="rp-count-hint"></span>

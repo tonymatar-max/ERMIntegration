@@ -2195,14 +2195,35 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
         return " ".join(str(v or "").strip().lower().split())
     project_by_code = {_n(p.get("rapportCode")): p["id"] for p in projects if p.get("rapportCode")}
     project_by_name = {_n(p.get("name")): p["id"] for p in projects if p.get("name")}
-    # Consultant name -> user id: the planning rows carry the exact names that
-    # were exported (assignee may be a PM, not just someone in the roster).
-    user_by_name = {}
+
+    # Consultant name -> user id. Hand-built sheets often use just a first name
+    # ("Abhilash") or a reversed order, so index several keys per person: the
+    # full name, the comma-flipped name, and each individual name token — but a
+    # token (or flipped form) is only kept when it maps to exactly one person,
+    # so an ambiguous first name never silently misassigns hours.
+    names_by_id = {}
     for r in resource_planning.build_plan(projects, timespent, months):
         if r.get("userName"):
-            user_by_name[_n(r["userName"])] = r["userId"]
+            names_by_id.setdefault(r["userId"], r["userName"])
     for u in settings_store.distinct_timesheet_users(timespent):
-        user_by_name.setdefault(_n(u.get("name")), u.get("id"))
+        if u.get("id") and u.get("name"):
+            names_by_id.setdefault(u["id"], u["name"])
+
+    def _key_variants(name: str):
+        n = _n(name)
+        variants = {n}
+        parts = [p for p in n.replace(",", " ").split() if p]
+        if len(parts) >= 2:
+            variants.add(" ".join(reversed(parts)))  # "last, first" <-> "first last"
+        variants.update(parts)  # individual tokens (first/last name alone)
+        return variants
+
+    key_to_ids = {}
+    for uid, name in names_by_id.items():
+        for k in _key_variants(name):
+            key_to_ids.setdefault(k, set()).add(uid)
+    # Keep only unambiguous keys.
+    user_by_name = {k: next(iter(ids)) for k, ids in key_to_ids.items() if len(ids) == 1}
 
     try:
         data = await file.read()
@@ -2229,6 +2250,22 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
         msg += (f" {stats['skipped']} row(s) skipped"
                 f" ({stats['unresolved_project']} no project match,"
                 f" {stats['unresolved_user']} no consultant match).")
+    return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+@app.post("/resource-planning/clear")
+def resource_planning_clear(request: Request):
+    """Clear every saved planning override (hours, reassignments, split rows)
+    so the plan reverts to the freshly auto-generated allocation. The page then
+    re-renders the regenerated plan; nothing is persisted until the user saves."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    counts = resource_planning.clear_all_plan()
+    logger.info("Resource Planning cleared by %r: %s", user["username"], counts)
+    total = sum(counts.values())
+    msg = (f"Cleared {total} saved entr{'y' if total == 1 else 'ies'} — the plan "
+           "below is freshly regenerated. Click “Save all” to keep it.")
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 
