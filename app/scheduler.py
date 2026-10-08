@@ -206,14 +206,44 @@ async def _tick():
     loop.run_in_executor(None, run_refresh, "(scheduled)", "auto")
 
 
+def _digest_tick():
+    """Send the weekly delivery digest when due — the configured weekday has
+    arrived, the configured time has passed, and it wasn't already sent today.
+    Runs in the scheduler loop (server-local time), like the auto-refresh."""
+    from . import digest, mailer
+    s = settings_store.get_digest_settings()
+    if not s["enabled"] or not mailer.is_configured():
+        return
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    if s["last_sent"] == today or now.weekday() != s["weekday"]:
+        return
+    hh, mm = _parse_hhmm(s["time"], (8, 0))
+    if (now.hour, now.minute) < (hh, mm):
+        return
+    try:
+        result = digest.send_digest()
+        settings_store.mark_digest_sent(today)
+        logger.info("Weekly digest sent to %d recipient(s)", result["sent"])
+    except Exception as e:
+        # Mark as attempted so a persistent failure doesn't retry every 30s all
+        # day; it'll try again next week (or admin can send manually).
+        settings_store.mark_digest_sent(today)
+        logger.warning("Weekly digest failed (won't retry until next week): %s", e)
+
+
 async def run_forever():
     """Started once at app startup (see main.py) and runs for the life of
     the process, checking every CHECK_INTERVAL_SECONDS whether the next
-    scheduled run is due."""
+    scheduled run (refresh or weekly digest) is due."""
     logger.info("Auto-refresh scheduler started (checks every %ss)", CHECK_INTERVAL_SECONDS)
     while True:
         try:
             await _tick()
         except Exception:
             logger.exception("Auto-refresh scheduler tick crashed")
+        try:
+            _digest_tick()
+        except Exception:
+            logger.exception("Digest tick crashed")
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)

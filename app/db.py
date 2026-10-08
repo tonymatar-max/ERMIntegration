@@ -214,6 +214,16 @@ def _migrate(conn):
         if not _column_exists(conn, "app_settings", col):
             conn.execute(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}")
 
+    # Weekly delivery-digest schedule (sent via SMTP to users with an email).
+    for col, ddl in [
+        ("digest_enabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("digest_weekday", "INTEGER NOT NULL DEFAULT 0"),   # 0 = Monday
+        ("digest_time", "TEXT NOT NULL DEFAULT '08:00'"),
+        ("digest_last_sent", "TEXT NOT NULL DEFAULT ''"),   # YYYY-MM-DD of last send
+    ]:
+        if not _column_exists(conn, "app_settings", col):
+            conn.execute(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a

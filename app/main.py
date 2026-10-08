@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from . import analysis, auth, db, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
+from . import analysis, auth, db, digest, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
 from .logging_config import LOG_PATH, logger, setup_logging
 from .redmine_client import (
     EDITABLE_FIELD_IDS,
@@ -79,6 +79,8 @@ class templates:
             context.setdefault("openrouter", {"model": ors["model"], "api_key": "•" * 12 if ors["api_key"] else ""})
             smtp = settings_store.get_smtp_settings()
             context.setdefault("smtp", {**smtp, "password": "•" * 12 if smtp["password"] else ""})
+            context.setdefault("digest", settings_store.get_digest_settings())
+            context.setdefault("digest_recipient_count", len(digest.recipients()))
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -343,6 +345,36 @@ def app_settings_form(request: Request):
         "request": request, "user": user, "settings": settings, "error": None, "ok": None,
         **_refresh_timing_context(),
     })
+
+
+@app.post("/app-settings/digest", response_class=HTMLResponse)
+def app_settings_digest_submit(request: Request, digest_enabled: str = Form(""), digest_weekday: str = Form("0"),
+                               digest_time: str = Form("08:00"), action: str = Form("")):
+    """Save the weekly-digest schedule, or send it now."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+
+    settings = settings_store.get_app_settings()
+    settings["api_key"] = "•" * 12 if settings["api_key"] else ""
+    base = {"request": request, "user": user, "settings": settings, **_refresh_timing_context()}
+
+    if action == "send":
+        try:
+            result = digest.send_digest()
+            return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": f"Digest sent to {result['sent']} recipient(s)."})
+        except Exception as e:
+            return templates.TemplateResponse("app_settings.html", {**base, "error": f"Could not send digest: {e}", "ok": None})
+
+    try:
+        weekday = int(digest_weekday)
+    except ValueError:
+        weekday = 0
+    settings_store.save_digest_settings(bool(digest_enabled), weekday, digest_time)
+    logger.info("Digest schedule saved by %r (enabled=%s, weekday=%s, time=%r)", user["username"], bool(digest_enabled), weekday, digest_time)
+    return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "Digest schedule saved."})
 
 
 @app.post("/app-settings/smtp", response_class=HTMLResponse)

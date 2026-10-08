@@ -120,6 +120,34 @@ def save_pp_report_excluded_project_ids(normalized_csv: str):
         )
 
 
+def get_digest_settings() -> dict:
+    with db.get_db() as conn:
+        row = conn.execute("SELECT digest_enabled, digest_weekday, digest_time, digest_last_sent FROM app_settings WHERE id = 1").fetchone()
+        if not row:
+            return {"enabled": False, "weekday": 0, "time": "08:00", "last_sent": ""}
+        return {"enabled": bool(row["digest_enabled"]), "weekday": row["digest_weekday"] or 0,
+                "time": row["digest_time"] or "08:00", "last_sent": row["digest_last_sent"] or ""}
+
+
+def save_digest_settings(enabled: bool, weekday: int, time_str: str):
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, digest_enabled, digest_weekday, digest_time, updated_on)
+            VALUES (1, ?, ?, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                digest_enabled = excluded.digest_enabled, digest_weekday = excluded.digest_weekday,
+                digest_time = excluded.digest_time, updated_on = datetime('now')
+            """,
+            (1 if enabled else 0, int(weekday), (time_str or "08:00").strip()),
+        )
+
+
+def mark_digest_sent(date_str: str):
+    with db.get_db() as conn:
+        conn.execute("UPDATE app_settings SET digest_last_sent = ? WHERE id = 1", (date_str,))
+
+
 def get_smtp_settings() -> dict:
     """SMTP settings for outgoing email; password decrypted (treated as unset
     if it can't be decrypted, like the other keys)."""

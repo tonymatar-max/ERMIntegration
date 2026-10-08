@@ -140,6 +140,36 @@
   </form>
 </div>
 
+<div class="wrap wide">
+  <h1>Weekly digest</h1>
+  <p class="hint">Emails a delivery summary (utilization, over-budget, order book, top overruns) to all users with an email address ({{ digest_recipient_count }} currently). Requires Email (SMTP) above to be configured.</p>
+  <form method="post" action="/app-settings/digest">
+    <label style="display:flex; align-items:center; gap:0.5rem; font-weight:400;">
+      <input type="checkbox" name="digest_enabled" value="1" {{ 'checked' if digest.enabled else '' }} style="width:auto;">
+      Send the weekly digest automatically
+    </label>
+    <div class="row">
+      <div>
+        <label>Day</label>
+        <select name="digest_weekday">
+          {% for i, d in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+          <option value="{{ i }}" {{ 'selected' if digest.weekday == i else '' }}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Time (server local)</label>
+        <input type="time" name="digest_time" value="{{ digest.time }}">
+      </div>
+    </div>
+    {% if digest.last_sent %}<p class="hint">Last sent: {{ digest.last_sent }}</p>{% endif %}
+    <div class="row">
+      <button type="submit">Save digest schedule</button>
+      <button type="submit" name="action" value="send" class="secondary">Send digest now</button>
+    </div>
+  </form>
+</div>
+
 <script>
 (function() {
   const modeSelect = document.getElementById('ar-mode');
