@@ -2259,17 +2259,42 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
 
 @app.post("/resource-planning/clear")
 def resource_planning_clear(request: Request):
-    """Clear every saved planning override (hours, reassignments, split rows)
-    so the plan reverts to the freshly auto-generated allocation. The page then
-    re-renders the regenerated plan; nothing is persisted until the user saves."""
+    """Wipe every saved planning override (hours, reassignments, split rows).
+    Nothing is auto-saved afterwards — use this for a clean slate before
+    importing a plan from Excel so only the imported data ends up saved. (The
+    page still SHOWS the auto-fill suggestion for unsaved cells, as always, but
+    the database holds nothing until you Save or Import.)"""
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
     counts = resource_planning.clear_all_plan()
     logger.info("Resource Planning cleared by %r: %s", user["username"], counts)
     total = sum(counts.values())
-    msg = (f"Cleared {total} saved entr{'y' if total == 1 else 'ies'} — the plan "
-           "below is freshly regenerated. Click “Save all” to keep it.")
+    msg = (f"Cleared {total} saved planning entr{'y' if total == 1 else 'ies'}. "
+           "Nothing is saved now — import from Excel, or Save to keep the "
+           "auto-fill shown below.")
+    return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+@app.post("/resource-planning/generate")
+def resource_planning_generate(request: Request):
+    """Regenerate the plan from Redmine data and SAVE it: clears any existing
+    overrides, then persists the fresh auto-fill allocation as saved cells.
+    Separate from Clear so each can be used on its own."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    resource_planning.clear_all_plan()
+    projects, timespent, _ = _resource_plan_data(user)
+    months = resource_planning.plan_months()
+    rows = resource_planning.build_plan(projects, timespent, months)
+    cells = [
+        {"project_id": r["projectId"], "user_id": r["userId"], "month": m, "hours": r["monthly"].get(m, 0.0)}
+        for r in rows for m in months
+    ]
+    resource_planning.save_planned_hours_batch(cells)
+    logger.info("Resource Planning regenerated+saved by %r: %d rows, %d cells", user["username"], len(rows), len(cells))
+    msg = f"Regenerated the auto plan and saved it ({len(rows)} project rows across {len(months)} months)."
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 
