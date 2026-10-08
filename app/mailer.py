@@ -69,7 +69,12 @@ def send_email(to, subject: str, body: str, html: str = None):
     except smtplib.SMTPAuthenticationError:
         raise MailError("SMTP login failed — check the username/password (for Office 365/Gmail you usually need an app password).")
     except smtplib.SMTPServerDisconnected:
-        raise MailError("The mail server closed the connection — check the port and SSL setting (587 = STARTTLS, 465 = SSL).")
+        raise MailError(
+            "The mail server closed the connection. Common causes: a wrong "
+            "app password, or the mail provider blocking this server's IP. "
+            "Try port 465 (SSL) instead of 587, double-check the app password, "
+            "or use your internal/Office 365 SMTP relay."
+        )
     except (smtplib.SMTPConnectError, OSError) as e:
         raise MailError(f"Could not connect to {s['host']}:{s['port']} — {e}. Check the host/port and that the server is reachable.")
     except Exception as e:
