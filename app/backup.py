@@ -10,16 +10,33 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
-from . import db
+from . import db, settings_store
 from .logging_config import logger
 
-KEEP = 30  # how many timestamped backups to retain
+DEFAULT_KEEP = 30  # fallback retention when settings are unavailable
+
+
+def default_backups_dir() -> str:
+    return os.path.join(os.path.dirname(db.DB_PATH), "backups")
 
 
 def backups_dir() -> str:
-    d = os.path.join(os.path.dirname(db.DB_PATH), "backups")
-    os.makedirs(d, exist_ok=True)
-    return d
+    """The configured backup directory (App Settings), or the default
+    data/backups folder when unset. Created if missing; falls back to the
+    default if the configured path can't be created (e.g. a dead network path)."""
+    try:
+        configured = settings_store.get_backup_settings()["dir"]
+    except Exception:
+        configured = ""
+    d = configured or default_backups_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+        return d
+    except OSError:
+        logger.warning("Backup dir %r unavailable; falling back to default", d)
+        fallback = default_backups_dir()
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
 
 
 def _is_backup_name(name: str) -> bool:
@@ -52,15 +69,19 @@ def create_backup(label: str = "manual") -> dict:
         src.close()
 
     size = os.path.getsize(path)
-    logger.info("DB backup created (%s): %s (%d bytes)", label, name, size)
+    logger.info("DB backup created (%s): %s -> %s (%d bytes)", label, name, dest_dir, size)
     _prune(dest_dir)
-    return {"name": name, "path": path, "size": size}
+    return {"name": name, "path": path, "size": size, "dir": dest_dir}
 
 
 def _prune(dest_dir: str):
+    try:
+        keep = settings_store.get_backup_settings()["keep"]
+    except Exception:
+        keep = DEFAULT_KEEP
     files = [f for f in os.listdir(dest_dir) if _is_backup_name(f)]
     files.sort(reverse=True)  # names are timestamped, so newest first
-    for old in files[KEEP:]:
+    for old in files[keep:]:
         try:
             os.remove(os.path.join(dest_dir, old))
             logger.info("Pruned old DB backup: %s", old)
@@ -105,20 +126,12 @@ def latest_backup() -> dict | None:
 # --- daily auto-backup bookkeeping (driven by the scheduler) ---
 
 def last_auto_backup_date() -> str:
-    """The YYYY-MM-DD of the most recent auto-backup, from a marker file, or ''
-    if none. A tiny marker file keeps this independent of the backups present."""
-    marker = os.path.join(backups_dir(), ".last_auto")
+    """YYYY-MM-DD of the most recent auto-backup (stored in app_settings)."""
     try:
-        with open(marker, encoding="utf-8") as fh:
-            return fh.read().strip()
-    except OSError:
+        return settings_store.get_backup_settings()["last_auto"]
+    except Exception:
         return ""
 
 
 def mark_auto_backup(date_str: str):
-    marker = os.path.join(backups_dir(), ".last_auto")
-    try:
-        with open(marker, "w", encoding="utf-8") as fh:
-            fh.write(date_str)
-    except OSError:
-        pass
+    settings_store.mark_backup_done(date_str)

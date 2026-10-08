@@ -224,6 +224,18 @@ def _migrate(conn):
         if not _column_exists(conn, "app_settings", col):
             conn.execute(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}")
 
+    # Database-backup location + daily schedule. backup_dir empty => the
+    # default data/backups folder (see backup.backups_dir).
+    for col, ddl in [
+        ("backup_dir", "TEXT NOT NULL DEFAULT ''"),
+        ("backup_enabled", "INTEGER NOT NULL DEFAULT 1"),   # daily auto-backup on by default
+        ("backup_time", "TEXT NOT NULL DEFAULT '03:00'"),
+        ("backup_keep", "INTEGER NOT NULL DEFAULT 30"),
+        ("backup_last_auto", "TEXT NOT NULL DEFAULT ''"),   # YYYY-MM-DD of last auto-backup
+    ]:
+        if not _column_exists(conn, "app_settings", col):
+            conn.execute(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a

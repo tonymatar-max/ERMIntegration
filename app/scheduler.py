@@ -233,13 +233,20 @@ def _digest_tick():
 
 
 def _backup_tick():
-    """Take one automatic DB backup per day (first scheduler tick on/after
-    03:00 server-local that hasn't already backed up today). Cheap insurance
-    against accidental data loss; old backups are pruned by backup.create_backup."""
+    """Take one automatic DB backup per day when enabled, at/after the
+    configured server-local time, if it hasn't already run today. Cheap
+    insurance against accidental data loss; old backups are pruned to the
+    configured retention."""
     from . import backup
+    s = settings_store.get_backup_settings()
+    if not s["enabled"]:
+        return
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
-    if backup.last_auto_backup_date() == today or now.hour < 3:
+    if s["last_auto"] == today:
+        return
+    hh, mm = _parse_hhmm(s["time"], (3, 0))
+    if (now.hour, now.minute) < (hh, mm):
         return
     try:
         backup.create_backup("auto-daily")

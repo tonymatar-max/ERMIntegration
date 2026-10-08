@@ -172,10 +172,34 @@
 
 <div class="wrap wide">
   <h1>Database backup</h1>
-  <p class="hint">Take a consistent snapshot of the whole database (users, settings, PP Report locks, KSA data, resource plans &mdash; everything). An automatic backup is also taken once a day and before any plan clear/generate/import. The last {{ backups|length }} are listed; older ones are pruned.{% if backup_last_auto %} Last automatic backup: <strong>{{ backup_last_auto }}</strong>.{% endif %}</p>
-  <form method="post" action="/app-settings/backup">
-    <button type="submit">Back up now</button>
+  <p class="hint">Consistent snapshots of the whole database (users, settings, PP Report locks, KSA data, resource plans &mdash; everything). A snapshot is also taken automatically before any plan clear/generate/import. Current location: <code>{{ backup_effective_dir }}</code>.{% if backup_settings.last_auto %} Last daily backup: <strong>{{ backup_settings.last_auto }}</strong>.{% endif %}</p>
+
+  <form method="post" action="/app-settings/backup-settings">
+    <label>Backup folder</label>
+    <input type="text" name="backup_dir" value="{{ backup_settings.dir }}" placeholder="Leave blank for the default (data\backups). e.g. D:\Backups\ERM or \\server\share\ERM">
+    <p class="hint">An absolute path on the server (a different drive or a network share is best, so a disk failure can't take the database and its backups together). The app must have write access; it's checked when you save.</p>
+
+    <div class="row">
+      <label style="display:flex; align-items:center; gap:0.5rem; font-weight:400;">
+        <input type="checkbox" name="backup_enabled" value="1" {{ 'checked' if backup_settings.enabled else '' }} style="width:auto;">
+        Daily automatic backup
+      </label>
+      <div>
+        <label>Time (server local)</label>
+        <input type="time" name="backup_time" value="{{ backup_settings.time }}">
+      </div>
+      <div style="flex:0 0 9rem">
+        <label>Keep last</label>
+        <input type="number" name="backup_keep" min="1" max="365" value="{{ backup_settings.keep }}"> backups
+      </div>
+    </div>
+    <button type="submit">Save backup settings</button>
   </form>
+
+  <form method="post" action="/app-settings/backup" style="margin-top:1rem;">
+    <button type="submit" class="secondary">Back up now</button>
+  </form>
+
   {% if backups %}
   <table class="data-table" style="margin-top:1rem;">
     <thead><tr><th>Backup file</th><th>Size</th><th>Taken</th><th></th></tr></thead>

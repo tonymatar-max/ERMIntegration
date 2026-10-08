@@ -148,6 +148,40 @@ def mark_digest_sent(date_str: str):
         conn.execute("UPDATE app_settings SET digest_last_sent = ? WHERE id = 1", (date_str,))
 
 
+def get_backup_settings() -> dict:
+    """DB-backup location + daily schedule. `dir` empty means the default
+    data/backups folder."""
+    with db.get_db() as conn:
+        row = conn.execute(
+            "SELECT backup_dir, backup_enabled, backup_time, backup_keep, backup_last_auto FROM app_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {"dir": "", "enabled": True, "time": "03:00", "keep": 30, "last_auto": ""}
+        return {"dir": row["backup_dir"] or "", "enabled": bool(row["backup_enabled"]),
+                "time": row["backup_time"] or "03:00", "keep": row["backup_keep"] or 30,
+                "last_auto": row["backup_last_auto"] or ""}
+
+
+def save_backup_settings(backup_dir: str, enabled: bool, time_str: str, keep: int):
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, backup_dir, backup_enabled, backup_time, backup_keep, updated_on)
+            VALUES (1, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                backup_dir = excluded.backup_dir, backup_enabled = excluded.backup_enabled,
+                backup_time = excluded.backup_time, backup_keep = excluded.backup_keep,
+                updated_on = datetime('now')
+            """,
+            ((backup_dir or "").strip(), 1 if enabled else 0, (time_str or "03:00").strip(), max(1, int(keep))),
+        )
+
+
+def mark_backup_done(date_str: str):
+    with db.get_db() as conn:
+        conn.execute("UPDATE app_settings SET backup_last_auto = ? WHERE id = 1", (date_str,))
+
+
 def get_smtp_settings() -> dict:
     """SMTP settings for outgoing email; password decrypted (treated as unset
     if it can't be decrypted, like the other keys)."""

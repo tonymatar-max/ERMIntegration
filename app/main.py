@@ -86,7 +86,8 @@ class templates:
             context.setdefault("digest", settings_store.get_digest_settings())
             context.setdefault("digest_recipient_count", len(digest.recipients()))
             context.setdefault("backups", backup.list_backups()[:10])
-            context.setdefault("backup_last_auto", backup.last_auto_backup_date())
+            context.setdefault("backup_settings", settings_store.get_backup_settings())
+            context.setdefault("backup_effective_dir", backup.backups_dir())
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -371,6 +372,43 @@ def app_settings_backup_now(request: Request):
     except Exception as e:
         logger.exception("Manual DB backup failed for %r", user["username"])
         return templates.TemplateResponse("app_settings.html", {**base, "error": f"Backup failed: {e}", "ok": None})
+
+
+@app.post("/app-settings/backup-settings", response_class=HTMLResponse)
+def app_settings_backup_settings(request: Request, backup_dir: str = Form(""),
+                                 backup_enabled: str = Form(""), backup_time: str = Form("03:00"),
+                                 backup_keep: str = Form("30")):
+    """Admin: save the backup location, daily schedule and retention."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+    settings = settings_store.get_app_settings()
+    settings["api_key"] = "•" * 12 if settings["api_key"] else ""
+    base = {"request": request, "user": user, "settings": settings, **_refresh_timing_context()}
+
+    backup_dir = (backup_dir or "").strip()
+    try:
+        keep = max(1, int(backup_keep))
+    except ValueError:
+        keep = 30
+    # If a custom directory was given, make sure we can actually write to it now,
+    # rather than discovering it's bad only when a 3 AM backup silently fails.
+    if backup_dir:
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            testfile = os.path.join(backup_dir, ".write_test")
+            with open(testfile, "w") as fh:
+                fh.write("ok")
+            os.remove(testfile)
+        except OSError as e:
+            return templates.TemplateResponse("app_settings.html", {**base, "error": f"That backup folder isn't writable: {e}", "ok": None})
+
+    settings_store.save_backup_settings(backup_dir, bool(backup_enabled), backup_time, keep)
+    logger.info("Backup settings saved by %r: dir=%r enabled=%s time=%s keep=%d",
+                user["username"], backup_dir or "(default)", bool(backup_enabled), backup_time, keep)
+    return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "Backup settings saved."})
 
 
 @app.get("/app-settings/backup/download/{name}")
