@@ -197,6 +197,23 @@ def _migrate(conn):
     if not _column_exists(conn, "app_settings", "openrouter_model"):
         conn.execute("ALTER TABLE app_settings ADD COLUMN openrouter_model TEXT NOT NULL DEFAULT ''")
 
+    # Per-user email, for notifications/alerts and so users can be reached.
+    if not _column_exists(conn, "users", "email"):
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+
+    # SMTP (outgoing email) settings so the app can send alerts/digests. The
+    # password is encrypted with the app secret like the other keys.
+    for col, ddl in [
+        ("smtp_host", "TEXT NOT NULL DEFAULT ''"),
+        ("smtp_port", "INTEGER NOT NULL DEFAULT 587"),
+        ("smtp_username", "TEXT NOT NULL DEFAULT ''"),
+        ("smtp_password_encrypted", "TEXT NOT NULL DEFAULT ''"),
+        ("smtp_from", "TEXT NOT NULL DEFAULT ''"),
+        ("smtp_use_tls", "INTEGER NOT NULL DEFAULT 1"),
+    ]:
+        if not _column_exists(conn, "app_settings", col):
+            conn.execute(f"ALTER TABLE app_settings ADD COLUMN {col} {ddl}")
+
 
 def _seed_default_countries(conn):
     """First-run only: seed the starting KSA/Kuwait/Lebanon/UAE rows with a

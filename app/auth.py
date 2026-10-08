@@ -24,14 +24,14 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("ascii"))
 
 
-def create_user(username: str, password: str, is_admin: bool = False, manager_id: str = ""):
+def create_user(username: str, password: str, is_admin: bool = False, manager_id: str = "", email: str = ""):
     with db.get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
         if existing:
             raise ValueError("Username already taken.")
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-            (username, hash_password(password), 1 if is_admin else 0),
+            "INSERT INTO users (username, password_hash, is_admin, email) VALUES (?, ?, ?, ?)",
+            (username, hash_password(password), 1 if is_admin else 0, (email or "").strip()),
         )
         user_id = cur.lastrowid
         conn.execute(
@@ -86,12 +86,29 @@ def read_session_cookie(value: str):
 
 def get_user(user_id: int):
     with db.get_db() as conn:
-        row = conn.execute("SELECT id, username, is_admin, created_on FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT id, username, is_admin, created_on, email FROM users WHERE id = ?", (user_id,)).fetchone()
         if not row:
             return None
         user = dict(row)
         user["is_admin"] = bool(user["is_admin"])
         return user
+
+
+def set_email(user_id: int, email: str):
+    with db.get_db() as conn:
+        conn.execute("UPDATE users SET email = ? WHERE id = ?", ((email or "").strip(), user_id))
+
+
+def change_password(user_id: int, current_password: str, new_password: str):
+    """Verify the current password, then set the new one. Raises ValueError
+    with a user-facing message on failure."""
+    if len(new_password or "") < 8:
+        raise ValueError("New password must be at least 8 characters.")
+    with db.get_db() as conn:
+        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row or not verify_password(current_password, row["password_hash"]):
+        raise ValueError("Current password is incorrect.")
+    set_password(user_id, new_password)
 
 
 def list_users():
@@ -102,7 +119,7 @@ def list_users():
     with db.get_db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.username, u.is_admin, u.created_on, COALESCE(p.manager_id, '') AS manager_id
+            SELECT u.id, u.username, u.is_admin, u.created_on, u.email, COALESCE(p.manager_id, '') AS manager_id
             FROM users u
             LEFT JOIN user_prefs p ON p.user_id = u.id
             ORDER BY u.is_admin DESC, u.username COLLATE NOCASE

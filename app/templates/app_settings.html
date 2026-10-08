@@ -107,6 +107,39 @@
   </form>
 </div>
 
+<div class="wrap wide">
+  <h1>Email (SMTP)</h1>
+  <p class="hint">Outgoing email so the app can send alerts and the weekly digest. The password is stored encrypted. For Office 365 use <code>smtp.office365.com</code> port 587 (TLS); for Gmail, an app password.</p>
+  <form method="post" action="/app-settings/smtp">
+    <div class="row">
+      <div>
+        <label>SMTP host</label>
+        <input type="text" name="smtp_host" value="{{ smtp.host }}" placeholder="smtp.office365.com">
+      </div>
+      <div style="flex:0 0 7rem">
+        <label>Port</label>
+        <input type="number" name="smtp_port" value="{{ smtp.port }}" placeholder="587">
+      </div>
+    </div>
+    <label>Username</label>
+    <input type="text" name="smtp_username" value="{{ smtp.username }}" placeholder="notifications@seidor.com">
+    <label>Password</label>
+    <input type="password" name="smtp_password" placeholder="{{ 'Leave blank to keep the saved password' if smtp.password else 'SMTP / app password' }}">
+    <label>From address</label>
+    <input type="text" name="smtp_from" value="{{ smtp.from }}" placeholder="ERM Project Ledger &lt;notifications@seidor.com&gt;">
+    <label style="display:flex; align-items:center; gap:0.5rem; font-weight:400; margin-top:0.9rem;">
+      <input type="checkbox" name="smtp_use_tls" value="1" {{ 'checked' if smtp.use_tls else '' }} style="width:auto;">
+      Use STARTTLS (recommended; port 465 uses implicit SSL automatically)
+    </label>
+    <label>Send a test email to</label>
+    <input type="email" name="test_to" value="{{ user.email or '' }}" placeholder="you@seidor.com">
+    <div class="row">
+      <button type="submit">Save email settings</button>
+      <button type="submit" name="action" value="test" class="secondary">Save &amp; send test</button>
+    </div>
+  </form>
+</div>
+
 <script>
 (function() {
   const modeSelect = document.getElementById('ar-mode');

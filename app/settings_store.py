@@ -120,6 +120,47 @@ def save_pp_report_excluded_project_ids(normalized_csv: str):
         )
 
 
+def get_smtp_settings() -> dict:
+    """SMTP settings for outgoing email; password decrypted (treated as unset
+    if it can't be decrypted, like the other keys)."""
+    with db.get_db() as conn:
+        row = conn.execute(
+            "SELECT smtp_host, smtp_port, smtp_username, smtp_password_encrypted, smtp_from, smtp_use_tls FROM app_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {"host": "", "port": 587, "username": "", "password": "", "from": "", "use_tls": True}
+        password = ""
+        if row["smtp_password_encrypted"]:
+            try:
+                password = crypto.decrypt(row["smtp_password_encrypted"])
+            except InvalidToken:
+                logger.error("Stored SMTP password could not be decrypted (app secret changed) — treating it as unset.")
+        return {
+            "host": row["smtp_host"] or "", "port": row["smtp_port"] or 587,
+            "username": row["smtp_username"] or "", "password": password,
+            "from": row["smtp_from"] or "", "use_tls": bool(row["smtp_use_tls"]),
+        }
+
+
+def save_smtp_settings(host: str, port: int, username: str, password: str, from_addr: str, use_tls: bool):
+    """Saves SMTP settings; a blank password keeps the stored one."""
+    encrypted = crypto.encrypt(password) if password else ""
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (id, smtp_host, smtp_port, smtp_username, smtp_password_encrypted, smtp_from, smtp_use_tls, updated_on)
+            VALUES (1, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                smtp_host = excluded.smtp_host, smtp_port = excluded.smtp_port,
+                smtp_username = excluded.smtp_username,
+                smtp_password_encrypted = CASE WHEN excluded.smtp_password_encrypted = '' THEN app_settings.smtp_password_encrypted ELSE excluded.smtp_password_encrypted END,
+                smtp_from = excluded.smtp_from, smtp_use_tls = excluded.smtp_use_tls,
+                updated_on = datetime('now')
+            """,
+            (host.strip(), int(port or 587), username.strip(), encrypted, from_addr.strip(), 1 if use_tls else 0),
+        )
+
+
 def get_consultant_name_map_raw() -> str:
     """Raw text of the consultant name map, one 'variant => canonical' per
     line — for redisplaying in the admin textarea."""

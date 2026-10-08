@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from . import analysis, auth, db, openrouter_client, pp_report, resource_planning, scheduler, settings_store
+from . import analysis, auth, db, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
 from .logging_config import LOG_PATH, logger, setup_logging
 from .redmine_client import (
     EDITABLE_FIELD_IDS,
@@ -77,6 +77,8 @@ class templates:
         if name == "app_settings.html":
             ors = settings_store.get_openrouter_settings()
             context.setdefault("openrouter", {"model": ors["model"], "api_key": "•" * 12 if ors["api_key"] else ""})
+            smtp = settings_store.get_smtp_settings()
+            context.setdefault("smtp", {**smtp, "password": "•" * 12 if smtp["password"] else ""})
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -280,22 +282,48 @@ def settings_form(request: Request):
 
 
 @app.post("/settings", response_class=HTMLResponse)
-def settings_submit(request: Request, my_team_ids: str = Form("")):
+def settings_submit(request: Request, my_team_ids: str = Form(""), email: str = Form("")):
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
 
     my_team_ids = my_team_ids.strip()
+    email = email.strip()
+
+    def render(error=None, ok=None):
+        prefs = settings_store.get_user_prefs(user["id"])
+        prefs["my_team_ids"] = my_team_ids if error else prefs["my_team_ids"]
+        return templates.TemplateResponse("settings.html", {"request": request, "user": auth.get_user(user["id"]), "prefs": prefs, "error": error, "ok": ok})
 
     if my_team_ids and not all(part.strip().isdigit() for part in my_team_ids.split(",") if part.strip()):
-        prefs = settings_store.get_user_prefs(user["id"])
-        prefs["my_team_ids"] = my_team_ids
-        return templates.TemplateResponse("settings.html", {"request": request, "user": user, "prefs": prefs, "error": "My Team must be comma-separated numeric Redmine user ids (e.g. 3252,1048,2077).", "ok": None})
+        return render(error="My Team must be comma-separated numeric Redmine user ids (e.g. 3252,1048,2077).")
+    if email and "@" not in email:
+        return render(error="That doesn't look like a valid email address.")
 
     settings_store.save_my_team(user["id"], my_team_ids)
-    logger.info("Preferences saved for user %r (my_team_ids=%r)", user["username"], my_team_ids)
-    prefs = settings_store.get_user_prefs(user["id"])
-    return templates.TemplateResponse("settings.html", {"request": request, "user": user, "prefs": prefs, "error": None, "ok": "Settings saved."})
+    auth.set_email(user["id"], email)
+    logger.info("Preferences saved for user %r (my_team_ids=%r, email set=%s)", user["username"], my_team_ids, bool(email))
+    return render(ok="Settings saved.")
+
+
+@app.post("/settings/password", response_class=HTMLResponse)
+def settings_change_password(request: Request, current_password: str = Form(""), new_password: str = Form(""), confirm_password: str = Form("")):
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+
+    def render(error=None, ok=None):
+        prefs = settings_store.get_user_prefs(user["id"])
+        return templates.TemplateResponse("settings.html", {"request": request, "user": auth.get_user(user["id"]), "prefs": prefs, "error": error, "ok": ok})
+
+    if new_password != confirm_password:
+        return render(error="New password and confirmation don't match.")
+    try:
+        auth.change_password(user["id"], current_password, new_password)
+    except ValueError as e:
+        return render(error=str(e))
+    logger.info("Password changed by user %r", user["username"])
+    return render(ok="Password changed.")
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +343,37 @@ def app_settings_form(request: Request):
         "request": request, "user": user, "settings": settings, "error": None, "ok": None,
         **_refresh_timing_context(),
     })
+
+
+@app.post("/app-settings/smtp", response_class=HTMLResponse)
+def app_settings_smtp_submit(request: Request, smtp_host: str = Form(""), smtp_port: str = Form("587"),
+                             smtp_username: str = Form(""), smtp_password: str = Form(""),
+                             smtp_from: str = Form(""), smtp_use_tls: str = Form(""),
+                             test_to: str = Form(""), action: str = Form("")):
+    """Save (or test) the outgoing-email (SMTP) settings for alerts/digests."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+
+    settings = settings_store.get_app_settings()
+    settings["api_key"] = "•" * 12 if settings["api_key"] else ""
+    base = {"request": request, "user": user, "settings": settings, **_refresh_timing_context()}
+    try:
+        port = int(smtp_port or 587)
+    except ValueError:
+        port = 587
+
+    if action == "test":
+        # Save first (so the test uses what's on screen), then send.
+        settings_store.save_smtp_settings(smtp_host, port, smtp_username, smtp_password, smtp_from, bool(smtp_use_tls))
+        ok_send, msg = mailer.test_send((test_to or user.get("email") or "").strip())
+        return templates.TemplateResponse("app_settings.html", {**base, "error": None if ok_send else msg, "ok": msg if ok_send else None})
+
+    settings_store.save_smtp_settings(smtp_host, port, smtp_username, smtp_password, smtp_from, bool(smtp_use_tls))
+    logger.info("SMTP settings saved by %r (host=%r)", user["username"], smtp_host.strip())
+    return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "Email (SMTP) settings saved."})
 
 
 @app.post("/app-settings/openrouter", response_class=HTMLResponse)
@@ -500,6 +559,7 @@ def users_create(
     password2: str = Form(...),
     is_admin: str = Form(""),
     manager_id: str = Form(""),
+    email: str = Form(""),
 ):
     user = require_login(request)
     if not user:
@@ -509,6 +569,7 @@ def users_create(
 
     username = username.strip()
     manager_id = manager_id.strip()
+    email = email.strip()
     error = None
     if len(username) < 3:
         error = "Username must be at least 3 characters."
@@ -518,17 +579,42 @@ def users_create(
         error = "Password must be at least 8 characters."
     elif manager_id and not manager_id.isdigit():
         error = "Project Manager id must be a numeric Redmine user id."
+    elif email and "@" not in email:
+        error = "That doesn't look like a valid email address."
 
     if not error:
         try:
-            new_id = auth.create_user(username, password, is_admin=bool(is_admin), manager_id=manager_id)
-            logger.info("User %r (id=%s, admin=%s, manager_id=%r) created by %r", username, new_id, bool(is_admin), manager_id, user["username"])
+            new_id = auth.create_user(username, password, is_admin=bool(is_admin), manager_id=manager_id, email=email)
+            logger.info("User %r (id=%s, admin=%s, manager_id=%r, email set=%s) created by %r", username, new_id, bool(is_admin), manager_id, bool(email), user["username"])
         except ValueError as e:
             error = str(e)
 
     return templates.TemplateResponse(
         "users.html",
         {"request": request, "user": user, "users": auth.list_users(), "error": error, "ok": None if error else f"User '{username}' created."},
+    )
+
+
+@app.post("/admin/users/{target_id}/email", response_class=HTMLResponse)
+def users_set_email(request: Request, target_id: int, email: str = Form("")):
+    """Admin sets/updates a user's email (for alerts/digest)."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+    email = email.strip()
+    error, ok = None, None
+    if email and "@" not in email:
+        error = "That doesn't look like a valid email address."
+    elif not auth.get_user(target_id):
+        error = "User not found."
+    else:
+        auth.set_email(target_id, email)
+        ok = "Email updated."
+    return templates.TemplateResponse(
+        "users.html",
+        {"request": request, "user": user, "users": auth.list_users(), "error": error, "ok": ok},
     )
 
 

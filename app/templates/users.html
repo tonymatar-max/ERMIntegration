@@ -12,7 +12,7 @@
       <tr>
         <th>Username</th>
         <th>Role</th>
-        <th>Created</th>
+        <th>Email</th>
         <th>Project Manager</th>
         <th>Reset password</th>
         <th></th>
@@ -23,7 +23,12 @@
       <tr>
         <td>{{ u.username }}</td>
         <td>{{ "Admin" if u.is_admin else "User" }}</td>
-        <td>{{ u.created_on }}</td>
+        <td>
+          <form method="post" action="/admin/users/{{ u.id }}/email" class="inline-form">
+            <input type="email" name="email" value="{{ u.email or '' }}" placeholder="none" style="width:11rem;">
+            <button type="submit" class="secondary btn-sm">Save</button>
+          </form>
+        </td>
         <td>
           {% if u.is_admin %}
             <span class="hint" style="margin:0;">n/a &mdash; admins see every project</span>
@@ -59,6 +64,8 @@
     <input type="password" name="password" minlength="8" required>
     <label>Confirm password</label>
     <input type="password" name="password2" minlength="8" required>
+    <label>Email (optional)</label>
+    <input type="email" name="email" placeholder="you@seidor.com">
     <label>Project Manager id (optional)</label>
     <input type="text" name="manager_id" placeholder="e.g. 3252 — leave blank for all projects">
     <p class="hint">Restricts this user to only this Redmine Project Manager id's projects. Ignored if "Grant admin" is checked.</p>
