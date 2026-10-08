@@ -2259,20 +2259,26 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
 
 @app.post("/resource-planning/clear")
 def resource_planning_clear(request: Request):
-    """Wipe every saved planning override (hours, reassignments, split rows).
-    Nothing is auto-saved afterwards — use this for a clean slate before
-    importing a plan from Excel so only the imported data ends up saved. (The
-    page still SHOWS the auto-fill suggestion for unsaved cells, as always, but
-    the database holds nothing until you Save or Import.)"""
+    """Empty the plan: remove reassignments/splits and set every planned cell
+    to 0, so the grid actually shows zeros (rather than the auto-fill it would
+    otherwise compute for empty cells). Use this for a clean slate before
+    importing a plan from Excel, so only the imported hours end up non-zero."""
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
-    counts = resource_planning.clear_all_plan()
-    logger.info("Resource Planning cleared by %r: %s", user["username"], counts)
-    total = sum(counts.values())
-    msg = (f"Cleared {total} saved planning entr{'y' if total == 1 else 'ies'}. "
-           "Nothing is saved now — import from Excel, or Save to keep the "
-           "auto-fill shown below.")
+    resource_planning.clear_all_plan()
+    # Persist explicit 0s for every current plannable cell so nothing auto-fills.
+    projects, timespent, _ = _resource_plan_data(user)
+    months = resource_planning.plan_months()
+    rows = resource_planning.build_plan(projects, timespent, months)
+    cells = [
+        {"project_id": r["projectId"], "user_id": r["userId"], "month": m, "hours": 0.0}
+        for r in rows for m in months
+    ]
+    resource_planning.save_planned_hours_batch(cells)
+    logger.info("Resource Planning cleared to zero by %r: %d cells", user["username"], len(cells))
+    msg = ("Cleared — all planned hours set to 0. Import from Excel, or enter "
+           "hours and Save.")
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 
