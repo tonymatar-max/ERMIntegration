@@ -38,19 +38,43 @@ def send_email(to, subject: str, body: str, html: str = None):
     if html:
         msg.add_alternative(html, subtype="html")
 
+    ctx = ssl.create_default_context()
+
+    def via_ssl():
+        with smtplib.SMTP_SSL(s["host"], s["port"], timeout=25, context=ctx) as srv:
+            srv.ehlo()
+            if s["username"]:
+                srv.login(s["username"], s["password"])
+            srv.send_message(msg)
+
+    def via_starttls():
+        with smtplib.SMTP(s["host"], s["port"], timeout=25) as srv:
+            srv.ehlo()
+            if s["use_tls"]:
+                srv.starttls(context=ctx)
+                srv.ehlo()
+            if s["username"]:
+                srv.login(s["username"], s["password"])
+            srv.send_message(msg)
+
     try:
         if s["port"] == 465:
-            with smtplib.SMTP_SSL(s["host"], s["port"], timeout=20, context=ssl.create_default_context()) as srv:
-                if s["username"]:
-                    srv.login(s["username"], s["password"])
-                srv.send_message(msg)
+            via_ssl()
         else:
-            with smtplib.SMTP(s["host"], s["port"], timeout=20) as srv:
-                if s["use_tls"]:
-                    srv.starttls(context=ssl.create_default_context())
-                if s["username"]:
-                    srv.login(s["username"], s["password"])
-                srv.send_message(msg)
+            try:
+                via_starttls()
+            except smtplib.SMTPServerDisconnected:
+                # Server dropped a plaintext/STARTTLS connection — it's very
+                # likely implicit-SSL only (some providers run SSL on 587 or a
+                # custom port). Retry once over SSL before giving up.
+                logger.warning("SMTP STARTTLS disconnected on %s:%s — retrying with implicit SSL", s["host"], s["port"])
+                via_ssl()
+    except smtplib.SMTPAuthenticationError:
+        raise MailError("SMTP login failed — check the username/password (for Office 365/Gmail you usually need an app password).")
+    except smtplib.SMTPServerDisconnected:
+        raise MailError("The mail server closed the connection — check the port and SSL setting (587 = STARTTLS, 465 = SSL).")
+    except (smtplib.SMTPConnectError, OSError) as e:
+        raise MailError(f"Could not connect to {s['host']}:{s['port']} — {e}. Check the host/port and that the server is reachable.")
     except Exception as e:
         raise MailError(f"Could not send email: {e}")
     logger.info("Email sent to %d recipient(s): %s", len(recipients), subject)
