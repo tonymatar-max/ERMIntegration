@@ -247,8 +247,7 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
     for p in projects:
         if p.get("status") == "Closed":
             continue  # nothing left to plan for a project that's already closed
-        if p.get("isTM"):
-            continue  # always remaining == 0 — see module docstring
+        is_tm = bool(p.get("isTM"))
         estimated = p.get("est") or 0.0
         spent = p.get("spent") or 0.0
         remaining = estimated - spent
@@ -256,8 +255,10 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
         # (remaining <= 0): the team may still need to log more time against
         # them, so they must remain plannable. Nothing is auto-filled for them
         # (the capacity-fill loop below allocates 0 when remaining <= 0), but
-        # the row appears so hours can be entered by hand. Only Closed and T&M
-        # projects are left out.
+        # the row appears so hours can be entered by hand. T&M projects are
+        # kept too (they used to be dropped as "always remaining == 0"); they
+        # have no fixed-budget cap, so they're shown but never flagged
+        # over-budget — see overBudget below. Only Closed projects are left out.
 
         assignee = assignee_overrides.get(p["id"]) or _most_recent_assignee(p["id"], timespent)
         if assignee is None:
@@ -269,10 +270,10 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
             else:
                 continue
 
-        plannable_projects[p["id"]] = {"name": p.get("name"), "rapportCode": p.get("rapportCode"), "country": p.get("country"), "remaining": remaining, "est": estimated, "spent": spent}
+        plannable_projects[p["id"]] = {"name": p.get("name"), "rapportCode": p.get("rapportCode"), "country": p.get("country"), "remaining": remaining, "est": estimated, "spent": spent, "isTM": is_tm}
         by_user.setdefault(assignee["id"], {"userName": assignee["name"], "projects": []})["projects"].append({
             "projectId": p["id"], "projectName": p.get("name"), "rapportCode": p.get("rapportCode"),
-            "country": p.get("country"), "remaining": remaining, "est": estimated, "spent": spent,
+            "country": p.get("country"), "remaining": remaining, "est": estimated, "spent": spent, "isTM": is_tm,
         })
 
     rows = []
@@ -314,7 +315,8 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
                 "remaining": pr["remaining"],
                 "est": pr["est"],
                 "spent": pr["spent"],
-                "overBudget": pr["est"] > 0 and pr["spent"] >= pr["est"],
+                "isTM": pr["isTM"],
+                "overBudget": (not pr["isTM"]) and pr["est"] > 0 and pr["spent"] >= pr["est"],
                 "monthly": monthly,
                 "isSplit": pr["projectId"] in extra_assignees,
                 "isExtraRow": False,
@@ -340,7 +342,8 @@ def build_plan(projects: list, timespent: list, months: list = None) -> list:
                 "remaining": project["remaining"],
                 "est": project["est"],
                 "spent": project["spent"],
-                "overBudget": project["est"] > 0 and project["spent"] >= project["est"],
+                "isTM": project["isTM"],
+                "overBudget": (not project["isTM"]) and project["est"] > 0 and project["spent"] >= project["est"],
                 "monthly": monthly,
                 "isSplit": True,
                 "isExtraRow": True,
@@ -580,19 +583,33 @@ class ImportError_(Exception):
     """Raised by parse_resource_plan_workbook when the file can't be read."""
 
 
-def parse_resource_plan_workbook(file_bytes: bytes, months: list) -> tuple:
+def _norm_text(v) -> str:
+    return " ".join(str(v or "").strip().lower().split())
+
+
+def parse_resource_plan_workbook(file_bytes: bytes, months: list,
+                                 project_by_code: dict = None,
+                                 project_by_name: dict = None,
+                                 user_by_name: dict = None) -> tuple:
     """Read an exported Resource Planning .xlsx back into planned-hours cells.
 
-    Reads the 'Detail' sheet (as produced by build_resource_plan_workbook):
-    columns 'Project ID', 'User ID', then the month columns matched to the
-    current `months` by their header label. Only month columns whose label
-    matches one of `months` are imported, so a file exported for a different
-    window still imports the overlapping months. Rows without a numeric Project
-    ID and User ID are skipped.
+    Reads the 'Detail' sheet (as produced by build_resource_plan_workbook) and
+    supports both export formats:
 
-    Returns (cells, stats) where cells is a list of
-    {project_id, user_id, month, hours} ready for save_planned_hours_batch,
-    and stats is {rows, cells, skipped, months_matched}."""
+      * New: 'Project ID' + 'User ID' columns → exact matching.
+      * Legacy / hand-edited: no id columns, matched instead by 'Rapport Code'
+        (falling back to 'Project' name) and the 'Consultant' name — using the
+        resolver maps passed in (all keyed by _norm_text): project_by_code and
+        project_by_name map to a project id, user_by_name maps a consultant
+        name to a Redmine user id.
+
+    Only month columns whose header label matches one of `months` are imported,
+    so a file exported for a different window still imports the overlapping
+    months. Rows that can't be resolved to both a project and a user are
+    skipped and counted.
+
+    Returns (cells, stats); stats = {rows, cells, skipped, unresolved_project,
+    unresolved_user, months_matched, mode}."""
     import io
 
     from openpyxl import load_workbook
@@ -611,26 +628,31 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list) -> tuple:
 
     header = [("" if h is None else str(h)).strip() for h in header]
     label_to_month = {format_month_label(m): m for m in months}
-    # Map each spreadsheet column index to a month key (only those we plan for).
     col_month = {}
-    pid_col = uid_col = None
+    cols = {}  # named column -> index
     for idx, h in enumerate(header):
-        if h == "Project ID":
-            pid_col = idx
-        elif h == "User ID":
-            uid_col = idx
+        if h in ("Project ID", "User ID", "Consultant", "Project", "Rapport Code"):
+            cols[h] = idx
         elif h in label_to_month:
             col_month[idx] = label_to_month[h]
 
-    if pid_col is None or uid_col is None:
-        raise ImportError_(
-            "This doesn't look like an exported plan — the 'Detail' sheet is "
-            "missing the 'Project ID' / 'User ID' columns. Export the plan "
-            "first, edit the month columns, then import that same file.")
     if not col_month:
         raise ImportError_(
             "None of the month columns in the file match the current planning "
-            "window. Re-export the plan and edit that file.")
+            "window (" + ", ".join(label_to_month) + "). Re-export the plan and "
+            "edit that file.")
+
+    id_mode = "Project ID" in cols and "User ID" in cols
+    if not id_mode:
+        # Legacy / hand-edited file — need something to match on.
+        if "Consultant" not in cols or ("Rapport Code" not in cols and "Project" not in cols):
+            raise ImportError_(
+                "This sheet needs either 'Project ID' + 'User ID' columns, or a "
+                "'Consultant' column plus a 'Rapport Code' (or 'Project') column "
+                "to match on. Export the plan first and edit that file.")
+        project_by_code = project_by_code or {}
+        project_by_name = project_by_name or {}
+        user_by_name = user_by_name or {}
 
     def _to_int(v):
         try:
@@ -646,22 +668,40 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list) -> tuple:
         except (TypeError, ValueError):
             return 0.0
 
+    def _cell(raw, name):
+        idx = cols.get(name)
+        return raw[idx] if idx is not None and idx < len(raw) else None
+
     cells = []
-    seen_rows = skipped = 0
+    seen_rows = skipped = unresolved_project = unresolved_user = 0
     for raw in rows_iter:
-        if raw is None:
+        if raw is None or not any(c not in (None, "") for c in raw):
             continue
-        pid = _to_int(raw[pid_col]) if pid_col < len(raw) else None
-        uid = _to_int(raw[uid_col]) if uid_col < len(raw) else None
-        if pid is None or uid is None:
-            if any(c not in (None, "") for c in raw):
-                skipped += 1
-            continue
+
+        if id_mode:
+            pid = _to_int(_cell(raw, "Project ID"))
+            uid = _to_int(_cell(raw, "User ID"))
+        else:
+            code = _norm_text(_cell(raw, "Rapport Code"))
+            name = _norm_text(_cell(raw, "Project"))
+            pid = (project_by_code.get(code) if code else None)
+            if pid is None and name:
+                pid = project_by_name.get(name)
+            uid = user_by_name.get(_norm_text(_cell(raw, "Consultant")))
+
+        if pid is None:
+            unresolved_project += 1; skipped += 1; continue
+        if uid is None:
+            unresolved_user += 1; skipped += 1; continue
+
         seen_rows += 1
         for col, month in col_month.items():
             hours = _to_hours(raw[col]) if col < len(raw) else 0.0
             cells.append({"project_id": pid, "user_id": uid, "month": month, "hours": hours})
 
     wb.close()
-    return cells, {"rows": seen_rows, "cells": len(cells),
-                   "skipped": skipped, "months_matched": len(col_month)}
+    return cells, {"rows": seen_rows, "cells": len(cells), "skipped": skipped,
+                   "unresolved_project": unresolved_project,
+                   "unresolved_user": unresolved_user,
+                   "months_matched": len(col_month),
+                   "mode": "id" if id_mode else "name"}

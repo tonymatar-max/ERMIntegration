@@ -2180,10 +2180,35 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
     if not user:
         return RedirectResponse("/login")
 
+    # Resolver maps so a legacy / hand-edited file (no Project ID / User ID
+    # columns) can be matched by Rapport Code (or project name) and consultant
+    # name — scoped to what this user can see, same as the page itself.
+    projects, _ = settings_store.load_cache("projects")
+    timespent, _ = settings_store.load_cache("timespent")
+    projects = _visible_projects(projects, user)
+    timespent = _visible_timespent(timespent, {p["id"] for p in projects})
+    if not _assigned_manager_id(user):
+        projects, timespent = pp_report.with_ksa(projects, timespent)
     months = resource_planning.plan_months()
+
+    def _n(v):
+        return " ".join(str(v or "").strip().lower().split())
+    project_by_code = {_n(p.get("rapportCode")): p["id"] for p in projects if p.get("rapportCode")}
+    project_by_name = {_n(p.get("name")): p["id"] for p in projects if p.get("name")}
+    # Consultant name -> user id: the planning rows carry the exact names that
+    # were exported (assignee may be a PM, not just someone in the roster).
+    user_by_name = {}
+    for r in resource_planning.build_plan(projects, timespent, months):
+        if r.get("userName"):
+            user_by_name[_n(r["userName"])] = r["userId"]
+    for u in settings_store.distinct_timesheet_users(timespent):
+        user_by_name.setdefault(_n(u.get("name")), u.get("id"))
+
     try:
         data = await file.read()
-        cells, stats = resource_planning.parse_resource_plan_workbook(data, months)
+        cells, stats = resource_planning.parse_resource_plan_workbook(
+            data, months, project_by_code=project_by_code,
+            project_by_name=project_by_name, user_by_name=user_by_name)
     except resource_planning.ImportError_ as e:
         return RedirectResponse(f"/resource-planning?import_error={quote(str(e))}", status_code=302)
     except Exception as e:
@@ -2191,14 +2216,19 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
         return RedirectResponse(f"/resource-planning?import_error={quote('Unexpected error reading the file: ' + str(e))}", status_code=302)
 
     if not cells:
-        return RedirectResponse(f"/resource-planning?import_error={quote('No rows to import were found in the file.')}", status_code=302)
+        hint = "No rows could be matched to your projects."
+        if stats["unresolved_project"] or stats["unresolved_user"]:
+            hint += f" {stats['unresolved_project']} couldn't match a project, {stats['unresolved_user']} a consultant."
+        return RedirectResponse(f"/resource-planning?import_error={quote(hint)}", status_code=302)
 
     resource_planning.save_planned_hours_batch(cells)
-    logger.info("Resource Planning imported by %r: %d cells across %d row(s), %d skipped",
-                user["username"], stats["cells"], stats["rows"], stats["skipped"])
+    logger.info("Resource Planning imported by %r (%s mode): %d cells across %d row(s), %d skipped",
+                user["username"], stats["mode"], stats["cells"], stats["rows"], stats["skipped"])
     msg = f"Imported {stats['rows']} project row(s) across {stats['months_matched']} month(s)."
     if stats["skipped"]:
-        msg += f" {stats['skipped']} row(s) without a Project/User ID were skipped."
+        msg += (f" {stats['skipped']} row(s) skipped"
+                f" ({stats['unresolved_project']} no project match,"
+                f" {stats['unresolved_user']} no consultant match).")
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 
