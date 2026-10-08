@@ -1305,7 +1305,11 @@ def analysis_page(request: Request):
     if has_settings:
         projects, fetched_on = settings_store.load_cache("projects")
         timespent, _ = settings_store.load_cache("timespent")
+        # Respect the admin-excluded managers AND excluded projects (same as
+        # the PP Report / Dashboard), plus the viewer's PM visibility, so the
+        # Analysis figures match what those pages count.
         projects = _drop_excluded_managers(projects)
+        projects = _drop_excluded_projects(projects)
         assigned = _assigned_manager_id(user)
         visible_full = _visible_projects(projects, user)
         if not assigned:
@@ -1373,7 +1377,11 @@ def _data_quality_inputs(user: dict):
     checks see exactly what the dashboards see."""
     projects, fetched_on = settings_store.load_cache("projects")
     timespent, _ = settings_store.load_cache("timespent")
+    # Same filtering as the Analysis page / PP Report: drop admin-excluded
+    # managers and admin-excluded projects, then apply the viewer's PM
+    # visibility — so Data Quality only flags projects that actually count.
     projects = _drop_excluded_managers(projects)
+    projects = _drop_excluded_projects(projects)
     visible = _visible_projects(projects, user)
     if not _assigned_manager_id(user):
         ts = _visible_timespent(timespent, {p["id"] for p in visible})
