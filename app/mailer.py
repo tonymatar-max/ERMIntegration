@@ -50,7 +50,10 @@ def send_email(to, subject: str, body: str, html: str = None):
     def via_starttls():
         with smtplib.SMTP(s["host"], s["port"], timeout=25) as srv:
             srv.ehlo()
-            if s["use_tls"]:
+            # Use STARTTLS whenever the server offers it (Gmail/O365 require it
+            # on 587) or the admin asked for it — don't rely on the checkbox
+            # alone, so a login is never attempted over plaintext.
+            if s["use_tls"] or srv.has_extn("starttls"):
                 srv.starttls(context=ctx)
                 srv.ehlo()
             if s["username"]:
@@ -58,17 +61,11 @@ def send_email(to, subject: str, body: str, html: str = None):
             srv.send_message(msg)
 
     try:
+        # Port 465 is implicit SSL; everything else is plain+STARTTLS.
         if s["port"] == 465:
             via_ssl()
         else:
-            try:
-                via_starttls()
-            except smtplib.SMTPServerDisconnected:
-                # Server dropped a plaintext/STARTTLS connection — it's very
-                # likely implicit-SSL only (some providers run SSL on 587 or a
-                # custom port). Retry once over SSL before giving up.
-                logger.warning("SMTP STARTTLS disconnected on %s:%s — retrying with implicit SSL", s["host"], s["port"])
-                via_ssl()
+            via_starttls()
     except smtplib.SMTPAuthenticationError:
         raise MailError("SMTP login failed — check the username/password (for Office 365/Gmail you usually need an app password).")
     except smtplib.SMTPServerDisconnected:
