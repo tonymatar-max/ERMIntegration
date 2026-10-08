@@ -68,6 +68,16 @@
   .rp-project-name { font-weight: 500; }
   .rp-rapport { color: var(--seidor-ink-soft); font-size: 0.78rem; }
   .rp-remaining { color: var(--seidor-ink-soft); font-size: 0.82rem; }
+  .rp-lockbar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; margin: 0.25rem 0 1rem; padding: 0.6rem 0.8rem; background: #f4f6fb; border: 1px solid var(--seidor-border); border-radius: 10px; }
+  .rp-lock-form { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+  .rp-lock-label { font-size: 0.8rem; color: var(--seidor-ink-soft); font-weight: 600; }
+  .rp-lock-select { padding: 0.35rem 0.5rem; border: 1px solid var(--seidor-border); border-radius: 6px; font: inherit; font-size: 0.82rem; }
+  .rp-locked-list { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .rp-locked-chip { display: inline-flex; align-items: center; gap: 0.3rem; background: #fff; border: 1px solid var(--seidor-border); border-radius: 999px; padding: 0.15rem 0.3rem 0.15rem 0.7rem; font-size: 0.8rem; }
+  .rp-locked-chip a { color: var(--seidor-blue); text-decoration: none; font-weight: 600; }
+  .rp-locked-chip a:hover { text-decoration: underline; }
+  .rp-locked-meta { color: var(--seidor-ink-soft); font-size: 0.72rem; }
+  .rp-locked-x { background: none; border: none; color: #a4262c; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.2rem; }
   .rp-spent-est { font-size: 0.82rem; color: var(--seidor-ink); font-variant-numeric: tabular-nums; }
   .rp-budget-cell .rp-over { color: #a4262c; font-weight: 700; }
   .rp-over-badge-sm { background: #a4262c; color: #fff; font-size: 0.6rem; font-weight: 700; padding: 0.05rem 0.35rem; border-radius: 7px; margin-left: 0.25rem; vertical-align: middle; }
@@ -156,6 +166,33 @@
     <button class="rp-toggle-all" id="rp-expand-all" type="button">Expand all</button>
     <button class="rp-toggle-all" id="rp-collapse-all" type="button">Collapse all</button>
     <span class="rp-hint" id="rp-count-hint"></span>
+  </div>
+
+  <!-- Lock a month as a baseline -->
+  <div class="rp-lockbar">
+    <form method="post" action="/resource-planning/lock" class="rp-lock-form"
+          onsubmit="return confirm('Lock this month\'s plan as a baseline snapshot? Re-locking a month replaces its previous baseline.');">
+      <span class="rp-lock-label">Lock baseline:</span>
+      <select name="month" class="rp-lock-select">
+        {% for m in months %}<option value="{{ m }}">{{ month_labels[loop.index0] }}{% if m in locked_set %} (locked){% endif %}</option>{% endfor %}
+      </select>
+      <button class="rp-btn rp-btn-sm" type="submit">Lock month</button>
+    </form>
+    {% if locked_months %}
+    <div class="rp-locked-list">
+      <span class="rp-lock-label">Locked:</span>
+      {% for lm in locked_months %}
+      <span class="rp-locked-chip">
+        <a href="/resource-planning/locked/{{ lm.month }}" title="Compare {{ lm.label }} plan vs actual">{{ lm.label }}</a>
+        <span class="rp-locked-meta">({{ lm.entries }})</span>
+        <form method="post" action="/resource-planning/unlock" style="display:inline;margin:0;" onsubmit="return confirm('Remove the locked baseline for {{ lm.label }}?');">
+          <input type="hidden" name="month" value="{{ lm.month }}">
+          <button type="submit" class="rp-locked-x" title="Remove baseline">&times;</button>
+        </form>
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   <!-- Filters -->

@@ -453,6 +453,148 @@ def actual_consultant_summary(rows: list, months: list) -> list:
     return summary
 
 
+# ---------------------------------------------------------------------------
+# Locking a month's plan as a baseline, to compare against actual hours later
+# ---------------------------------------------------------------------------
+
+def lock_month(month: str, rows: list, locked_by: str = "") -> int:
+    """Freeze the current plan's `month` column as a baseline snapshot — one
+    entry per (project, consultant) with a non-zero planned figure that month.
+    `rows` is a build_plan() result. Re-locking replaces the snapshot. Returns
+    the number of planned entries captured."""
+    import json
+    snap = []
+    for r in rows:
+        planned = float(r.get("monthly", {}).get(month) or 0)
+        if planned <= 0:
+            continue
+        snap.append({
+            "projectId": r["projectId"], "projectName": r.get("projectName"),
+            "rapportCode": r.get("rapportCode"), "country": r.get("country"),
+            "userId": r["userId"], "userName": r.get("userName"),
+            "planned": planned,
+        })
+    payload = json.dumps({"rows": snap})
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO resource_plan_lock (month, snapshot_json, locked_on, locked_by)
+            VALUES (?, ?, datetime('now'), ?)
+            ON CONFLICT(month) DO UPDATE SET
+                snapshot_json = excluded.snapshot_json, locked_on = datetime('now'),
+                locked_by = excluded.locked_by
+            """,
+            (month, payload, locked_by or ""),
+        )
+    return len(snap)
+
+
+def unlock_month(month: str):
+    with db.get_db() as conn:
+        conn.execute("DELETE FROM resource_plan_lock WHERE month = ?", (month,))
+
+
+def get_locked_months() -> list:
+    """All locked months (newest first) with their metadata and entry count."""
+    import json
+    with db.get_db() as conn:
+        rows = conn.execute(
+            "SELECT month, snapshot_json, locked_on, locked_by FROM resource_plan_lock ORDER BY month DESC"
+        ).fetchall()
+    out = []
+    for r in rows:
+        try:
+            n = len(json.loads(r["snapshot_json"]).get("rows", []))
+        except (ValueError, TypeError):
+            n = 0
+        out.append({"month": r["month"], "label": format_month_label(r["month"]),
+                    "locked_on": r["locked_on"], "locked_by": r["locked_by"], "entries": n})
+    return out
+
+
+def get_lock(month: str) -> dict | None:
+    import json
+    with db.get_db() as conn:
+        r = conn.execute(
+            "SELECT month, snapshot_json, locked_on, locked_by FROM resource_plan_lock WHERE month = ?",
+            (month,),
+        ).fetchone()
+    if not r:
+        return None
+    try:
+        data = json.loads(r["snapshot_json"])
+    except (ValueError, TypeError):
+        data = {"rows": []}
+    return {"month": r["month"], "label": format_month_label(r["month"]),
+            "locked_on": r["locked_on"], "locked_by": r["locked_by"],
+            "rows": data.get("rows", [])}
+
+
+def build_lock_comparison(month: str, projects: list, timespent: list) -> dict | None:
+    """Compare the locked plan for `month` against the actual hours logged that
+    month, per consultant. Returns None if the month isn't locked. Each row:
+    planned (from the lock), actual (from timespent), variance and utilization;
+    plus firm-wide totals."""
+    lock = get_lock(month)
+    if lock is None:
+        return None
+
+    planned_by_user = {}
+    planned_detail = {}  # (userId, projectId) -> planned
+    for s in lock["rows"]:
+        planned_by_user[s["userId"]] = planned_by_user.get(s["userId"], 0.0) + float(s["planned"] or 0)
+        planned_detail[(s["userId"], s["projectId"])] = {
+            "projectName": s.get("projectName"), "rapportCode": s.get("rapportCode"),
+            "userName": s.get("userName"), "planned": float(s["planned"] or 0), "actual": 0.0,
+        }
+
+    actual_rows = actual_hours_for_months(projects, timespent, [month])
+    actual_by_user = {}
+    names = {}
+    for a in actual_rows:
+        uid = a["userId"]
+        act = float(a["monthly"].get(month) or 0)
+        actual_by_user[uid] = actual_by_user.get(uid, 0.0) + act
+        names[uid] = a.get("userName") or names.get(uid, "")
+        key = (uid, a["projectId"])
+        if key in planned_detail:
+            planned_detail[key]["actual"] += act
+        else:
+            planned_detail[key] = {"projectName": a.get("projectName"), "rapportCode": a.get("rapportCode"),
+                                   "userName": a.get("userName"), "planned": 0.0, "actual": act}
+
+    cap = capacity_hours(month)
+    user_ids = set(planned_by_user) | set(actual_by_user)
+    rows = []
+    for uid in user_ids:
+        planned = round(planned_by_user.get(uid, 0.0), 1)
+        actual = round(actual_by_user.get(uid, 0.0), 1)
+        name = names.get(uid) or next((s["userName"] for s in lock["rows"] if s["userId"] == uid), "") or f"User #{uid}"
+        rows.append({
+            "userId": uid, "userName": name,
+            "planned": planned, "actual": actual, "variance": round(actual - planned, 1),
+            "planned_pct": round(100 * planned / cap) if cap else 0,
+            "actual_pct": round(100 * actual / cap) if cap else 0,
+        })
+    rows.sort(key=lambda r: r["userName"].lower())
+
+    detail = []
+    for (uid, pid), d in planned_detail.items():
+        detail.append({**d, "userId": uid, "projectId": pid,
+                       "planned": round(d["planned"], 1), "actual": round(d["actual"], 1),
+                       "variance": round(d["actual"] - d["planned"], 1)})
+    detail.sort(key=lambda d: ((d["userName"] or "").lower(), (d["projectName"] or "").lower()))
+
+    totals = {
+        "planned": round(sum(r["planned"] for r in rows), 1),
+        "actual": round(sum(r["actual"] for r in rows), 1),
+    }
+    totals["variance"] = round(totals["actual"] - totals["planned"], 1)
+    return {"month": month, "label": lock["label"], "locked_on": lock["locked_on"],
+            "locked_by": lock["locked_by"], "capacity": cap,
+            "rows": rows, "detail": detail, "totals": totals}
+
+
 def build_utilization_workbook(months: list, rows: list, summary: list) -> bytes:
     """Renders the Utilization Report as an .xlsx: a 'Summary' sheet
     (consultant x month actual/capacity/utilization%) and a 'Detail'

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Plan vs Actual &mdash; {{ c.label }} &mdash; ERM{% endblock %}
+{% block content %}
+<style>
+  #cmp { max-width: 1100px; margin: 0 auto; padding: 22px 1.25rem 60px; }
+  #cmp h1 { font-size: 1.5rem; font-weight: 600; color: var(--seidor-navy); margin: 0 0 2px; }
+  #cmp .sub { color: var(--seidor-ink-soft); font-size: 0.86rem; margin: 0 0 18px; }
+  #cmp .sub a { color: var(--seidor-blue); }
+  #cmp .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+  #cmp .kpi { position: relative; background: #fff; border: 1px solid var(--seidor-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(7,21,58,.05); padding: 15px; overflow: hidden; }
+  #cmp .kpi::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--seidor-blue), var(--seidor-accent)); }
+  #cmp .kpi .v { font-size: 1.5rem; font-weight: 700; color: var(--seidor-navy); font-variant-numeric: tabular-nums; }
+  #cmp .kpi .l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--seidor-ink-soft); margin-top: 7px; }
+  #cmp .card { background: #fff; border: 1px solid var(--seidor-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(7,21,58,.05); padding: 18px; margin-bottom: 18px; }
+  #cmp .card h3 { margin: 0 0 14px; font-size: 1rem; font-weight: 600; color: var(--seidor-navy); }
+  #cmp table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  #cmp thead th { text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--seidor-ink-soft); padding: 8px; border-bottom: 1px solid var(--seidor-border); }
+  #cmp tbody td { padding: 8px; border-bottom: 1px solid var(--seidor-border); color: var(--seidor-ink-soft); }
+  #cmp td.num, #cmp th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #cmp .name { color: var(--seidor-navy); font-weight: 600; }
+  #cmp .pos { color: #a4262c; font-weight: 700; }  /* over plan */
+  #cmp .neg { color: #1e7a45; font-weight: 700; }  /* under plan */
+  #cmp tfoot td { padding: 10px 8px; font-weight: 700; color: var(--seidor-navy); border-top: 2px solid var(--seidor-border); font-variant-numeric: tabular-nums; }
+  #cmp .bar { display:inline-block; height: 8px; border-radius: 4px; background: var(--seidor-blue); vertical-align: middle; }
+</style>
+
+<div id="cmp">
+  <h1>Plan vs Actual &mdash; {{ c.label }}</h1>
+  <p class="sub">
+    Locked baseline (from {{ c.locked_by or 'unknown' }}, <span class="local-time" data-format="full" data-utc-iso="{{ c.locked_on }}"></span>)
+    compared against hours actually logged in {{ c.label }}.
+    Capacity {{ "%.0f"|format(c.capacity) }}h/consultant.
+    &middot; <a href="/resource-planning">&larr; Back to Resource Planning</a>
+  </p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">{{ "{:,.0f}".format(c.totals.planned) }}h</div><div class="l">Planned (locked)</div></div>
+    <div class="kpi"><div class="v">{{ "{:,.0f}".format(c.totals.actual) }}h</div><div class="l">Actual logged</div></div>
+    <div class="kpi"><div class="v {{ 'pos' if c.totals.variance > 0 else ('neg' if c.totals.variance < 0 else '') }}">{{ '%+.0f'|format(c.totals.variance) }}h</div><div class="l">Variance (actual − plan)</div></div>
+    <div class="kpi"><div class="v">{{ ((100 * c.totals.actual / c.totals.planned) | round | int) if c.totals.planned else 0 }}%</div><div class="l">Actual vs plan</div></div>
+  </div>
+
+  <div class="card">
+    <h3>By consultant</h3>
+    <table>
+      <thead><tr><th>Consultant</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">Plan&nbsp;%</th><th class="num">Actual&nbsp;%</th></tr></thead>
+      <tbody>
+        {% for r in c.rows %}
+        <tr>
+          <td class="name">{{ r.userName }}</td>
+          <td class="num">{{ "%.1f"|format(r.planned) }}</td>
+          <td class="num">{{ "%.1f"|format(r.actual) }}</td>
+          <td class="num {{ 'pos' if r.variance > 0 else ('neg' if r.variance < 0 else '') }}">{{ '%+.1f'|format(r.variance) }}</td>
+          <td class="num">{{ r.planned_pct }}%</td>
+          <td class="num">{{ r.actual_pct }}%</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="color:var(--seidor-ink-soft)">No planned or actual hours for this month.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td>Total</td><td class="num">{{ "%.1f"|format(c.totals.planned) }}</td><td class="num">{{ "%.1f"|format(c.totals.actual) }}</td><td class="num {{ 'pos' if c.totals.variance > 0 else ('neg' if c.totals.variance < 0 else '') }}">{{ '%+.1f'|format(c.totals.variance) }}</td><td></td><td></td></tr></tfoot>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>By consultant &amp; project</h3>
+    <table>
+      <thead><tr><th>Consultant</th><th>Project</th><th>Code</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead>
+      <tbody>
+        {% for d in c.detail %}
+        <tr>
+          <td class="name">{{ d.userName }}</td>
+          <td>{{ d.projectName }}</td>
+          <td>{{ d.rapportCode or '—' }}</td>
+          <td class="num">{{ "%.1f"|format(d.planned) }}</td>
+          <td class="num">{{ "%.1f"|format(d.actual) }}</td>
+          <td class="num {{ 'pos' if d.variance > 0 else ('neg' if d.variance < 0 else '') }}">{{ '%+.1f'|format(d.variance) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="color:var(--seidor-ink-soft)">Nothing to show.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -410,6 +410,19 @@ def init_db():
                 PRIMARY KEY (project_id, redmine_user_id)
             );
 
+            -- A locked snapshot of the Resource Planning plan for one month:
+            -- the planned hours per (project, consultant) frozen at lock time,
+            -- so the plan that was committed for e.g. October can later be
+            -- compared against the actual hours logged that month (see
+            -- resource_planning.lock_month / build_lock_comparison). Stored as
+            -- JSON, one row per locked month.
+            CREATE TABLE IF NOT EXISTS resource_plan_lock (
+                month TEXT PRIMARY KEY,
+                snapshot_json TEXT NOT NULL,
+                locked_on TEXT NOT NULL DEFAULT (datetime('now')),
+                locked_by TEXT NOT NULL DEFAULT ''
+            );
+
             -- KSA projects aren't tracked in Redmine — their per-month
             -- figures (Total Revenue, Accumulated, Previous Accumulated,
             -- Amount to Take) are read from the monthly PP Report workbook's

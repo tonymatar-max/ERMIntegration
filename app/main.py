@@ -47,6 +47,7 @@ NAV_BY_TEMPLATE = {
     "analysis.html": "analysis",
     "pp_report.html": "pp-report",
     "resource_planning.html": "resource",
+    "resource_plan_compare.html": "resource",
     "utilization_report.html": "utilization",
     "settings.html": "settings",
     "app_settings.html": "app-settings",
@@ -2008,12 +2009,15 @@ def resource_planning_page(request: Request, import_ok: str = "", import_error: 
     summary = resource_planning.consultant_summary(rows, months)
     roster = settings_store.distinct_timesheet_users(timespent)
     my_team_ids = [t.strip() for t in settings_store.get_user_prefs(user["id"])["my_team_ids"].split(",") if t.strip()]
+    locked_months = resource_planning.get_locked_months()
+    locked_set = {lm["month"] for lm in locked_months}
 
     return templates.TemplateResponse("resource_planning.html", {
         "request": request, "user": user, "fetched_on": fetched_on,
         "months": months, "month_labels": [resource_planning.format_month_label(m) for m in months],
         "rows": rows, "summary": summary, "roster": roster,
         "my_team_ids": my_team_ids,
+        "locked_months": locked_months, "locked_set": locked_set,
         "import_ok": import_ok, "import_error": import_error,
         **_refresh_timing_context(),
     })
@@ -2267,6 +2271,60 @@ def resource_planning_clear(request: Request):
     msg = (f"Cleared {total} saved entr{'y' if total == 1 else 'ies'} — the plan "
            "below is freshly regenerated. Click “Save all” to keep it.")
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+def _resource_plan_data(user: dict):
+    """Visible projects + timespent for the Resource Planning page/actions,
+    with the same KSA merge as the page."""
+    projects, fetched_on = settings_store.load_cache("projects")
+    timespent, _ = settings_store.load_cache("timespent")
+    projects = _visible_projects(projects, user)
+    timespent = _visible_timespent(timespent, {p["id"] for p in projects})
+    if not _assigned_manager_id(user):
+        projects, timespent = pp_report.with_ksa(projects, timespent)
+    return projects, timespent, fetched_on
+
+
+@app.post("/resource-planning/lock")
+def resource_planning_lock(request: Request, month: str = Form(...)):
+    """Freeze the current plan's chosen month as a baseline snapshot, so it can
+    later be compared against the hours actually logged that month."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    projects, timespent, _ = _resource_plan_data(user)
+    rows = resource_planning.build_plan(projects, timespent, resource_planning.plan_months())
+    n = resource_planning.lock_month(month, rows, locked_by=user["username"])
+    logger.info("Resource Planning month %s locked by %r (%d entries)", month, user["username"], n)
+    msg = f"Locked {resource_planning.format_month_label(month)} as a baseline ({n} planned entries). Compare it against actuals anytime."
+    return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+@app.post("/resource-planning/unlock")
+def resource_planning_unlock(request: Request, month: str = Form(...)):
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    resource_planning.unlock_month(month)
+    logger.info("Resource Planning month %s unlocked by %r", month, user["username"])
+    return RedirectResponse(f"/resource-planning?import_ok={quote('Removed the locked baseline for ' + resource_planning.format_month_label(month) + '.')}", status_code=302)
+
+
+@app.get("/resource-planning/locked/{month}", response_class=HTMLResponse)
+def resource_planning_locked_compare(month: str, request: Request):
+    """Locked plan vs actual hours for one month, per consultant."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    projects, timespent, fetched_on = _resource_plan_data(user)
+    comparison = resource_planning.build_lock_comparison(month, projects, timespent)
+    if comparison is None:
+        return RedirectResponse(f"/resource-planning?import_error={quote(resource_planning.format_month_label(month) + ' is not locked.')}", status_code=302)
+    return templates.TemplateResponse("resource_plan_compare.html", {
+        "request": request, "user": user, "fetched_on": fetched_on,
+        "c": comparison,
+        **_refresh_timing_context(),
+    })
 
 
 class ResourcePlanCellUpdate(BaseModel):
