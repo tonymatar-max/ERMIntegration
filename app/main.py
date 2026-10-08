@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from . import analysis, auth, db, digest, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
+from . import analysis, auth, data_quality, db, digest, mailer, openrouter_client, pp_report, resource_planning, scheduler, settings_store
 from .logging_config import LOG_PATH, logger, setup_logging
 from .redmine_client import (
     EDITABLE_FIELD_IDS,
@@ -51,6 +51,7 @@ NAV_BY_TEMPLATE = {
     "countries.html": "countries",
     "employees.html": "employees",
     "pp_report_months.html": "pp-data",
+    "data_quality.html": "data-quality",
     "users.html": "users",
 }
 
@@ -1364,6 +1365,93 @@ async def api_ai_summary(request: Request):
         result = {"text": result, "model": ors["models"][0]}
     logger.info("AI summary generated for %r via %s", user["username"], result.get("model"))
     return JSONResponse(content={"summary": result.get("text", ""), "model": result.get("model", "")})
+
+
+def _data_quality_inputs(user: dict):
+    """Projects + time entries for the Data Quality page / AI query, assembled
+    with the same visibility rules and KSA merge as the Analysis page, so the
+    checks see exactly what the dashboards see."""
+    projects, fetched_on = settings_store.load_cache("projects")
+    timespent, _ = settings_store.load_cache("timespent")
+    projects = _drop_excluded_managers(projects)
+    visible = _visible_projects(projects, user)
+    if not _assigned_manager_id(user):
+        ts = _visible_timespent(timespent, {p["id"] for p in visible})
+        ts = ts + pp_report.ksa_timesheet_entries_all(settings_store.distinct_timesheet_users(ts))
+    else:
+        pm_ids = {p["id"] for p in visible}
+        team = {t.get("user_id") for t in timespent if t.get("project_id") in pm_ids and t.get("user_id")}
+        ts = [t for t in timespent if t.get("user_id") in team]
+    return visible, ts, fetched_on
+
+
+@app.get("/data-quality", response_class=HTMLResponse)
+def data_quality_page(request: Request):
+    """Surfaces the recurring hygiene problems — projects with no country,
+    likely consultant duplicates, stale/missing reviews, missing estimates —
+    as one actionable list, plus a natural-language query over the ledger.
+    Recomputed from the cache on every load, so it reflects the latest refresh."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+
+    settings = settings_store.get_app_settings()
+    has_settings = bool(settings["redmine_url"] and settings["api_key"])
+    report = None
+    fetched_on = None
+    if has_settings:
+        projects, timespent, fetched_on = _data_quality_inputs(user)
+        report = data_quality.build_report(projects, timespent, settings_store.get_consultant_name_map())
+
+    ors = settings_store.get_openrouter_settings()
+    return templates.TemplateResponse("data_quality.html", {
+        "request": request, "user": user, "has_settings": has_settings,
+        "report": report, "fetched_on": fetched_on,
+        "openrouter_ready": bool(ors["api_key"] and ors["models"]),
+        **_refresh_timing_context(),
+    })
+
+
+@app.post("/api/data-quality/query")
+async def api_data_quality_query(request: Request):
+    """Answer a natural-language question about the portfolio via OpenRouter.
+    The model is given a compact snapshot of the (visible) projects and asked
+    to answer only from it. The key never leaves the server."""
+    user = require_login(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"detail": "Not logged in."})
+    ors = settings_store.get_openrouter_settings()
+    if not ors["api_key"] or not ors["models"]:
+        return JSONResponse(status_code=400, content={"detail": "OpenRouter isn't configured yet — add an API key and at least one model under App Settings → OpenRouter."})
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    question = (body.get("question") or "").strip()
+    if not question:
+        return JSONResponse(status_code=400, content={"detail": "Type a question first."})
+
+    projects, _, _ = _data_quality_inputs(user)
+    if not projects:
+        return JSONResponse(status_code=400, content={"detail": "No project data cached yet — run a refresh first."})
+    context = data_quality.build_query_context(projects)
+    try:
+        result = openrouter_client.chat(
+            ors["api_key"], ors["models"],
+            [
+                {"role": "system", "content": "You are a delivery-operations analyst for a SAP Business One consulting firm. Answer ONLY from the portfolio snapshot provided. If the data can't answer the question, say so plainly. Be concise and numeric; cite project ids/names. Never invent figures."},
+                {"role": "user", "content": f"{context}\n\nQUESTION: {question}"},
+            ],
+        )
+    except openrouter_client.OpenRouterError as e:
+        return JSONResponse(status_code=502, content={"detail": str(e)})
+    except Exception as e:
+        logger.exception("Data-quality AI query failed")
+        return JSONResponse(status_code=500, content={"detail": f"Query failed: {e}"})
+    if isinstance(result, str):
+        result = {"text": result, "model": ors["models"][0]}
+    logger.info("Data-quality query answered for %r via %s", user["username"], result.get("model"))
+    return JSONResponse(content={"answer": result.get("text", ""), "model": result.get("model", "")})
 
 
 @app.post("/api/refresh")

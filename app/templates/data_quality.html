@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Data Quality &mdash; ERM{% endblock %}
+{% block content %}
+<style>
+  #dq-scope { max-width: 1120px; margin: 0 auto; padding: 22px 1.25rem 60px; }
+  #dq-scope h1.page { font-size: 1.5rem; font-weight: 600; color: var(--seidor-navy); margin: 0 0 2px; }
+  #dq-scope .sub { color: var(--seidor-ink-soft); font-size: 0.86rem; margin: 0 0 18px; }
+  #dq-scope .sec-label { text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.68rem; font-weight: 600; color: var(--seidor-blue); margin: 30px 0 12px; display: flex; align-items: center; gap: 10px; }
+  #dq-scope .sec-label::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, var(--seidor-border), transparent); }
+  #dq-scope .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  #dq-scope .kpi { position: relative; background: #fff; border: 1px solid var(--seidor-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(7,21,58,.05); padding: 15px; overflow: hidden; }
+  #dq-scope .kpi::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--seidor-blue), var(--seidor-accent)); }
+  #dq-scope .kpi.ok::before { background: #1e7a45; } #dq-scope .kpi.warn::before { background: #9a6b00; } #dq-scope .kpi.crit::before { background: #b3261e; }
+  #dq-scope .kpi .v { font-size: 1.6rem; font-weight: 700; color: var(--seidor-navy); line-height: 1; font-variant-numeric: tabular-nums; }
+  #dq-scope .kpi.ok .v { color: #1e7a45; } #dq-scope .kpi.warn .v { color: #9a6b00; } #dq-scope .kpi.crit .v { color: #b3261e; }
+  #dq-scope .kpi .l { font-size: 0.64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--seidor-ink-soft); margin-top: 7px; }
+  #dq-scope .card { background: #fff; border: 1px solid var(--seidor-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(7,21,58,.05); padding: 18px; margin-bottom: 16px; }
+  #dq-scope .card h3 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; color: var(--seidor-navy); display:flex; align-items:center; gap:10px; }
+  #dq-scope .card .cnt { font-size: 0.72rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+  #dq-scope .cnt.ok { color: #1e7a45; background: #e6f4ec; } #dq-scope .cnt.bad { color: #b3261e; background: #fdecea; }
+  #dq-scope .card .cdesc { font-size: 0.8rem; color: var(--seidor-ink-soft); margin: 0 0 12px; line-height: 1.5; }
+  #dq-scope table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  #dq-scope thead th { text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--seidor-ink-soft); padding: 8px; border-bottom: 1px solid var(--seidor-border); }
+  #dq-scope tbody td { padding: 8px; border-bottom: 1px solid var(--seidor-border); color: var(--seidor-ink-soft); vertical-align: top; }
+  #dq-scope td.num, #dq-scope th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #dq-scope .pname { color: var(--seidor-navy); font-weight: 600; }
+  #dq-scope code { background: #eef2f9; padding: 1px 6px; border-radius: 5px; font-size: 0.82em; }
+  #dq-scope .pill { font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  #dq-scope .pill.crit { color: #b3261e; background: #fdecea; } #dq-scope .pill.warn { color: #9a6b00; background: #fbf1d9; }
+  #dq-scope .empty { font-size: 0.85rem; color: #1e7a45; }
+  #dq-scope .fixnote { font-size: 0.74rem; color: var(--seidor-ink-soft); margin-top: 10px; }
+  #dq-scope .ai-btn { display: inline-flex; align-items: center; font: inherit; font-size: 12.5px; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--seidor-accent), #1f4fb0); border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+  #dq-scope .ai-btn:disabled { opacity: .6; cursor: default; }
+  #dq-scope .ai-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+  #dq-scope .ai-row input { flex: 1; min-width: 240px; padding: 10px 12px; border: 1px solid var(--seidor-border); border-radius: 8px; font: inherit; font-size: 13.5px; }
+  #dq-scope .ai-panel { border: 1px solid var(--seidor-border); border-left: 4px solid var(--seidor-accent); border-radius: 12px; background: #fff; padding: 14px 18px; margin-top: 14px; }
+  #dq-scope .ai-text { font-size: 13.5px; line-height: 1.6; color: var(--seidor-ink-soft); white-space: pre-wrap; }
+  #dq-scope .ex { font-size: 0.76rem; color: var(--seidor-ink-soft); margin-top: 10px; }
+  #dq-scope .ex a { color: var(--seidor-blue); cursor: pointer; text-decoration: underline; }
+  @media (max-width: 860px) { #dq-scope .kpis { grid-template-columns: repeat(2,1fr); } }
+</style>
+
+<div id="dq-scope">
+  <h1 class="page">Data Quality</h1>
+  {% if not has_settings %}
+    <div class="msg error">The shared Redmine connection isn't configured yet. Ask an admin to set it up under App Settings.</div>
+  {% elif not report %}
+    <div class="msg error">No data cached yet &mdash; run <a href="/dashboard">Refresh from Redmine</a> first.</div>
+  {% else %}
+  <p class="sub">Hygiene checks over the latest refresh (generated <span class="local-time" data-format="full" data-utc-iso="{{ fetched_on or '' }}"></span>). Fixing these keeps every per-country, per-consultant and review figure accurate.</p>
+
+  <div class="kpis">
+    <div class="kpi {{ 'ok' if report.total_issues == 0 else 'crit' }}"><div class="v">{{ report.total_issues }}</div><div class="l">Total issues</div></div>
+    {% for c in report.checks %}
+    <div class="kpi {{ 'ok' if c.count == 0 else 'warn' }}"><div class="v">{{ c.count }}</div><div class="l">{{ c.label }}</div></div>
+    {% endfor %}
+  </div>
+
+  <!-- AI query -->
+  {% if openrouter_ready %}
+  <div class="sec-label">Ask the ledger</div>
+  <div class="card">
+    <p class="cdesc">Ask a question in plain language about the current portfolio &mdash; it's answered only from the cached project figures.</p>
+    <div class="ai-row">
+      <input id="dq-q" type="text" placeholder="e.g. Which UAE projects are most over budget?" autocomplete="off">
+      <button id="dq-ask" type="button" class="ai-btn">Ask</button>
+    </div>
+    <div class="ex">Try:
+      <a data-q="Which projects are most over budget and by how many hours?">biggest overruns</a> &middot;
+      <a data-q="Which active projects have no country set?">missing countries</a> &middot;
+      <a data-q="Summarise the order book by country.">order book by country</a>
+    </div>
+    <span id="dq-ai-status" style="font-size:12.5px;color:var(--seidor-ink-soft)"></span>
+    <div id="dq-ai-panel" class="ai-panel" hidden><div id="dq-ai-text" class="ai-text"></div><div id="dq-ai-model" style="font-size:11px;color:var(--seidor-ink-soft);margin-top:8px;font-family:monospace"></div></div>
+  </div>
+  {% endif %}
+
+  <div class="sec-label">Checks</div>
+  {% for c in report.checks %}
+  <div class="card">
+    <h3>{{ c.label }} <span class="cnt {{ 'ok' if c.count == 0 else 'bad' }}">{{ c.count }}</span></h3>
+    <p class="cdesc">{{ c.desc }}</p>
+    {% if c.count == 0 %}
+      <p class="empty">&#10003; All clear.</p>
+    {% elif c.key == 'name_flips' %}
+      <table>
+        <thead><tr><th>Names seen</th><th>Why flagged</th></tr></thead>
+        <tbody>
+          {% for g in c.items %}
+          <tr><td class="pname">{{ g.names|join('  ↔  ') }}</td><td>{{ g.reason }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="fixnote">Fix: add <code>variant =&gt; canonical</code> lines under <a href="/admin/pp-report-months">PP Report Data &rarr; consultant name map</a>, then refresh.</p>
+    {% elif c.key == 'stale_reviews' %}
+      <table>
+        <thead><tr><th>Project</th><th>Code</th><th>PM</th><th>Country</th><th>Last review</th><th class="num">Spent</th></tr></thead>
+        <tbody>
+          {% for r in c.items %}
+          <tr>
+            <td><span class="pname">#{{ r.id }} {{ r.name[:48] }}</span>{% if r.over_budget %} <span class="pill crit">over budget</span>{% endif %}</td>
+            <td>{{ r.rapportCode or '—' }}</td><td>{{ r.manager or '—' }}</td><td>{{ r.country }}</td>
+            <td>{% if r.missing %}<span class="pill warn">none</span>{% else %}{{ r.revDate }} <span style="color:var(--seidor-ink-soft)">({{ r.age_days }}d)</span>{% endif %}</td>
+            <td class="num">{{ "{:,}".format(r.spent) }}h</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="fixnote">Fix: open the project on the <a href="/dashboard">Dashboard</a> and update its review (summary/comments).</p>
+    {% else %}
+      <table>
+        <thead><tr><th>Project</th><th>Code</th><th>PM</th><th class="num">Spent</th></tr></thead>
+        <tbody>
+          {% for r in c.items %}
+          <tr><td class="pname">#{{ r.id }} {{ r.name[:52] }}</td><td>{{ r.rapportCode or '—' }}</td><td>{{ r.manager or '—' }}</td><td class="num">{{ "{:,}".format(r.spent) }}h</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="fixnote">Fix: set the {{ 'Country' if c.key == 'no_country' else 'Estimated hours' }} field in Redmine for each project, then refresh.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if openrouter_ready %}
+  <script>
+    (function(){
+      const btn = document.getElementById('dq-ask');
+      const input = document.getElementById('dq-q');
+      if (!btn || !input) return;
+      const statusEl = document.getElementById('dq-ai-status');
+      const panel = document.getElementById('dq-ai-panel');
+      const textEl = document.getElementById('dq-ai-text');
+      const modelEl = document.getElementById('dq-ai-model');
+      async function ask(){
+        const question = input.value.trim();
+        if (!question) { input.focus(); return; }
+        btn.disabled = true; statusEl.textContent = ' Thinking…';
+        try {
+          const resp = await fetch('/api/data-quality/query', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ question }) });
+          const raw = await resp.text();
+          let body; try { body = JSON.parse(raw); } catch (_) { throw new Error((raw || 'Server error').slice(0, 180)); }
+          if (!resp.ok) throw new Error(body.detail || 'Request failed');
+          textEl.textContent = body.answer || '(no answer)'; modelEl.textContent = body.model || '';
+          panel.hidden = false; statusEl.textContent = '';
+        } catch (e) { statusEl.textContent = ' Error: ' + e.message; }
+        finally { btn.disabled = false; }
+      }
+      btn.addEventListener('click', ask);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+      document.querySelectorAll('#dq-scope .ex a').forEach(a => a.addEventListener('click', () => {
+        input.value = a.getAttribute('data-q'); ask();
+      }));
+    })();
+  </script>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
