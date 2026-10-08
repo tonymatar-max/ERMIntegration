@@ -64,6 +64,37 @@
     <div class="kpi crit"><div class="v">{{ p.negative_remaining }}</div><div class="l">Negative remaining</div></div>
   </div>
 
+  <!-- Trends -->
+  {% if trends and trends.series|length %}
+  <div class="sec-label">Trends — last 12 months</div>
+  <div class="grid2">
+    <div class="card"><h3>Utilization %</h3><div id="trend-util"></div></div>
+    <div class="card"><h3>Hours logged (Redmine + KSA)</h3><div id="trend-hours"></div></div>
+  </div>
+  <script>
+    window.__TRENDS__ = {{ trends | tojson }};
+    (function(){
+      const s = (window.__TRENDS__ || {}).series || [];
+      if (!s.length) return;
+      function line(elId, key, color, suffix){
+        const el = document.getElementById(elId); if(!el) return;
+        const W=520,H=150,padL=34,padB=22,padT=10,padR=8;
+        const vals=s.map(d=>d[key]||0); const max=Math.max(...vals,1); const n=s.length;
+        const x=i=> padL + (n<=1?0:i*(W-padL-padR)/(n-1));
+        const y=v=> padT + (H-padT-padB)*(1 - v/max);
+        const pts=s.map((d,i)=>`${x(i).toFixed(1)},${y(d[key]||0).toFixed(1)}`).join(' ');
+        const area=`${padL},${(H-padB)} ${pts} ${x(n-1).toFixed(1)},${(H-padB)}`;
+        const dots=s.map((d,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(d[key]||0).toFixed(1)}" r="2.6" fill="${color}"/>`).join('');
+        const labs=s.map((d,i)=> (i%2===0||i===n-1) ? `<text x="${x(i).toFixed(1)}" y="${H-6}" font-size="8" fill="#8b94ab" text-anchor="middle">${d.label.slice(0,3)}</text>`:'').join('');
+        const yticks=[0,Math.round(max/2),max].map(v=>`<text x="${padL-5}" y="${(y(v)+3).toFixed(1)}" font-size="8" fill="#8b94ab" text-anchor="end">${v}${suffix||''}</text><line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W-padR}" y2="${y(v).toFixed(1)}" stroke="#eef2f9"/>`).join('');
+        el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img"><title>${elId}</title>${yticks}<polygon points="${area}" fill="${color}22"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${labs}</svg>`;
+      }
+      line('trend-util','util_pct','#2f2f8c','%');
+      line('trend-hours','total','#66b6ff','');
+    })();
+  </script>
+  {% endif %}
+
   <!-- Hours & utilization by month -->
   <div class="sec-label">Hours &amp; utilization by month</div>
   <div class="grid2">

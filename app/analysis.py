@@ -15,6 +15,48 @@ def _month_window(report_month: str, count: int = 3) -> list:
     return months
 
 
+def build_trends(projects: list, timespent: list, report_month: str, months_back: int = 12) -> dict:
+    """Monthly time-series (oldest→newest) derived from the cached time entries,
+    so history is available immediately without waiting to accumulate. Covers
+    hours (Redmine vs KSA), utilization %, active consultants and cross-team
+    count per month, for the `months_back` months ending at report_month."""
+    months = [report_month]
+    for _ in range(months_back - 1):
+        months.insert(0, rp.previous_month_str(months[0]))
+    mset = set(months)
+    pmap = {p["id"]: p for p in projects}
+
+    hours = {m: {"total": 0.0, "redmine": 0.0, "ksa": 0.0} for m in months}
+    users = {m: {} for m in months}
+    user_mgrs = {m: {} for m in months}
+    for t in timespent or []:
+        m = (t.get("spent_on") or "")[:7]
+        if m not in mset:
+            continue
+        h = float(t.get("hours") or 0)
+        is_ksa = (t.get("project_id") or 0) < 0
+        hours[m]["total"] += h
+        hours[m]["ksa" if is_ksa else "redmine"] += h
+        u = t.get("user_name") or "?"
+        users[m][u] = users[m].get(u, 0.0) + h
+        mgr = "KSA" if is_ksa else ((pmap.get(t.get("project_id")) or {}).get("managerName") or "(unknown)")
+        user_mgrs[m].setdefault(u, set()).add(mgr)
+
+    series = []
+    for m in months:
+        cap = rp.capacity_hours(m)
+        actives = [v for v in users[m].values() if v > 0]
+        total = sum(actives)
+        series.append({
+            "month": m, "label": rp.format_month_label(m),
+            "total": round(total), "redmine": round(hours[m]["redmine"]), "ksa": round(hours[m]["ksa"]),
+            "active": len(actives),
+            "util_pct": round(100 * total / (len(actives) * cap)) if actives and cap else 0,
+            "cross_team": sum(1 for s in user_mgrs[m].values() if len(s) > 1),
+        })
+    return {"months": months, "series": series}
+
+
 def build_analysis(projects: list, timespent: list, report_month: str, excluded_codes=None) -> dict:
     excluded_codes = {c.upper() for c in (excluded_codes or set())}
     months = _month_window(report_month, 3)

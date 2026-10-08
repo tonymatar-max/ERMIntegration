@@ -1284,11 +1284,12 @@ def analysis_page(request: Request):
             ts = [t for t in timespent if t.get("user_id") in team]
         report_month = (fetched_on or "")[:7] or resource_planning.current_month_str()
         data = analysis.build_analysis(visible_full, ts, report_month, settings_store.get_ksa_excluded_codes())
+        trends = analysis.build_trends(visible_full, ts, report_month, 12)
 
     ors = settings_store.get_openrouter_settings()
     return templates.TemplateResponse("analysis.html", {
         "request": request, "user": user, "has_settings": has_settings,
-        "data": data, "fetched_on": fetched_on,
+        "data": data, "trends": trends if has_settings else None, "fetched_on": fetched_on,
         "openrouter_ready": bool(ors["api_key"] and ors["models"]),
     })
 
