@@ -86,7 +86,7 @@
       <table>
         <thead><tr><th>Names seen</th><th>Why flagged</th></tr></thead>
         <tbody>
-          {% for g in c.items %}
+          {% for g in c.rows %}
           <tr><td class="pname">{{ g.names|join('  ↔  ') }}</td><td>{{ g.reason }}</td></tr>
           {% endfor %}
         </tbody>
@@ -96,7 +96,7 @@
       <table>
         <thead><tr><th>Project</th><th>Code</th><th>PM</th><th>Country</th><th>Last review</th><th class="num">Spent</th></tr></thead>
         <tbody>
-          {% for r in c.items %}
+          {% for r in c.rows %}
           <tr>
             <td><span class="pname">#{{ r.id }} {{ r.name[:48] }}</span>{% if r.over_budget %} <span class="pill crit">over budget</span>{% endif %}</td>
             <td>{{ r.rapportCode or '—' }}</td><td>{{ r.manager or '—' }}</td><td>{{ r.country }}</td>
@@ -111,7 +111,7 @@
       <table>
         <thead><tr><th>Project</th><th>Code</th><th>PM</th><th class="num">Spent</th></tr></thead>
         <tbody>
-          {% for r in c.items %}
+          {% for r in c.rows %}
           <tr><td class="pname">#{{ r.id }} {{ r.name[:52] }}</td><td>{{ r.rapportCode or '—' }}</td><td>{{ r.manager or '—' }}</td><td class="num">{{ "{:,}".format(r.spent) }}h</td></tr>
           {% endfor %}
         </tbody>

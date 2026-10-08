@@ -174,22 +174,22 @@ def build_report(projects: list, timespent: list, name_map: dict,
          "desc": "Active projects missing a country — they fall into the "
                  "“(no country)” bucket and skew per-country figures. "
                  "Fix the Country field in Redmine, then refresh.",
-         "count": len(no_country), "items": no_country, "fix": "project"},
+         "count": len(no_country), "rows": no_country, "fix": "project"},
         {"key": "name_flips", "label": "Possible consultant duplicates",
          "desc": "Names that likely refer to one person (same Redmine id, or "
                  "the same name in a different word order) and aren’t yet "
                  "unified. Add a line to the consultant name map so their "
                  "hours merge.",
-         "count": len(flips), "items": flips, "fix": "name_map"},
+         "count": len(flips), "rows": flips, "fix": "name_map"},
         {"key": "stale_reviews", "label": "Stale or missing reviews",
          "desc": f"Active projects whose last review is missing or older than "
                  f"{stale_days} days. Over-budget projects are listed first.",
-         "count": len(reviews), "items": reviews, "fix": "review"},
+         "count": len(reviews), "rows": reviews, "fix": "review"},
         {"key": "no_estimate", "label": "Logged time but no estimate",
          "desc": "Active fixed-price projects with hours logged but no "
                  "estimate — consumed-% and remaining are meaningless "
                  "until an estimate is set.",
-         "count": len(no_est), "items": no_est, "fix": "project"},
+         "count": len(no_est), "rows": no_est, "fix": "project"},
     ]
     total = sum(c["count"] for c in checks)
     return {"checks": checks, "total_issues": total}
