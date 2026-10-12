@@ -6,7 +6,8 @@
   .map-table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1.5rem; font-size: 0.88rem; }
   .map-table th, .map-table td { padding: 0.5rem 0.6rem; border-top: 1px solid #f0f2f5; text-align: left; vertical-align: middle; }
   .map-table thead th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--seidor-ink-soft); border-top: none; }
-  .map-table select { width: 100%; max-width: 38rem; padding: 0.35rem; border: 1px solid #dde3e8; border-radius: 5px; font-size: 0.85rem; }
+  .map-table .map-pick { width: 100%; max-width: 38rem; padding: 0.35rem; border: 1px solid #dde3e8; border-radius: 5px; font-size: 0.85rem; }
+  .map-pick.bad { border-color: #a4262c; background: #fdf1f1; }
   .map-label { font-weight: 600; }
   .map-sub { color: var(--seidor-ink-soft); font-size: 0.78rem; }
   .map-tag { font-size: 0.68rem; background: #eef2f8; color: var(--seidor-blue); padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.4rem; }
@@ -34,12 +35,8 @@
           <td><span class="map-label">{{ e.label }}</span><br>
               <span class="map-sub">{{ e.rows }} row(s), {{ "%.0f"|format(e.hours) }}h</span></td>
           <td>
-            <select name="p::{{ e.label }}">
-              <option value="">Skip these rows</option>
-              {% for o in project_options %}
-              <option value="{{ o.id }}" {{ 'selected' if o.id == e.suggested else '' }}>{{ o.text }}</option>
-              {% endfor %}
-            </select>
+            <input type="hidden" name="p::{{ e.label }}" value="{{ e.suggested if e.suggested else '' }}">
+            <input type="text" class="map-pick" data-list="dl-p" autocomplete="off" placeholder="Type to search, or leave empty to skip">
             {% if e.suggested %}<span class="map-tag">suggested</span>{% endif %}
           </td>
         </tr>
@@ -58,12 +55,8 @@
           <td><span class="map-label">{{ e.label }}</span><br>
               <span class="map-sub">{{ e.rows }} row(s), {{ "%.0f"|format(e.hours) }}h</span></td>
           <td>
-            <select name="u::{{ e.label }}">
-              <option value="">Skip these rows</option>
-              {% for o in user_options %}
-              <option value="{{ o.id }}" {{ 'selected' if o.id == e.suggested else '' }}>{{ o.text }}</option>
-              {% endfor %}
-            </select>
+            <input type="hidden" name="u::{{ e.label }}" value="{{ e.suggested if e.suggested else '' }}">
+            <input type="text" class="map-pick" data-list="dl-u" autocomplete="off" placeholder="Type to search, or leave empty to skip">
             {% if e.suggested %}<span class="map-tag">suggested</span>{% endif %}
           </td>
         </tr>
@@ -71,6 +64,9 @@
       </tbody>
     </table>
     {% endif %}
+
+    <datalist id="dl-p">{% for o in project_options %}<option value="{{ o.text }}" data-id="{{ o.id }}">{% endfor %}</datalist>
+    <datalist id="dl-u">{% for o in user_options %}<option value="{{ o.text }}" data-id="{{ o.id }}">{% endfor %}</datalist>
 
     <label style="font-size:0.88rem;"><input type="checkbox" name="remember" value="1" checked>
       Remember these choices &mdash; the same names map automatically on the next import</label>
@@ -80,4 +76,29 @@
     </div>
   </form>
 </div>
+<script>
+(function () {
+  const maps = {};
+  document.querySelectorAll('datalist').forEach(dl => {
+    const byText = {}, byId = {};
+    dl.querySelectorAll('option').forEach(o => { byText[o.value] = o.dataset.id; byId[o.dataset.id] = o.value; });
+    maps[dl.id] = { byText, byId };
+  });
+  document.querySelectorAll('.map-pick').forEach(box => {
+    const m = maps[box.dataset.list], hidden = box.previousElementSibling;
+    box.setAttribute('list', box.dataset.list);
+    if (hidden.value && m.byId[hidden.value]) box.value = m.byId[hidden.value];
+    box.addEventListener('focus', () => { if (box.value) box.select(); });
+    box.addEventListener('input', () => {
+      const id = m.byText[box.value] || '';
+      hidden.value = id;
+      box.classList.toggle('bad', !!box.value && !id);
+    });
+  });
+  document.querySelector('.map-wrap form').addEventListener('submit', e => {
+    if (document.querySelector('.map-pick.bad') &&
+        !confirm('Some entries do not match anything in the list and will be skipped. Continue?')) e.preventDefault();
+  });
+})();
+</script>
 {% endblock %}
