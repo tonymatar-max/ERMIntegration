@@ -2524,24 +2524,46 @@ def resource_planning_clear(request: Request):
 
 @app.post("/resource-planning/generate")
 def resource_planning_generate(request: Request):
-    """Regenerate the plan from Redmine data and SAVE it: clears any existing
-    overrides, then persists the fresh auto-fill allocation as saved cells.
-    Separate from Clear so each can be used on its own."""
+    """Fill the plan from Redmine data WITHOUT touching what's already saved:
+    existing hours, reassignments and splits stay as they are. Only months that
+    have no saved value get the auto-fill, and only while the project still has
+    unplanned remaining hours (saved hours across all its rows count against
+    that). Use Clear plan first for a true rebuild."""
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
     _safe_backup("pre-generate")
-    resource_planning.clear_all_plan()
     projects, timespent, _ = _resource_plan_data(user)
     months = resource_planning.plan_months()
     rows = resource_planning.build_plan(projects, timespent, months)
-    cells = [
-        {"project_id": r["projectId"], "user_id": r["userId"], "month": m, "hours": r["monthly"].get(m, 0.0)}
-        for r in rows for m in months
-    ]
+    saved = resource_planning.get_overrides()
+
+    planned_by_project = {}
+    for r in rows:
+        planned_by_project[r["projectId"]] = planned_by_project.get(r["projectId"], 0.0) + sum(
+            saved.get((r["projectId"], r["userId"], m), 0.0) for m in months)
+
+    cells, rows_touched = [], 0
+    for r in rows:
+        if r["isExtraRow"]:
+            continue  # split rows are manual only
+        missing = [m for m in months if (r["projectId"], r["userId"], m) not in saved]
+        if not missing:
+            continue
+        shortfall = max(0.0, r["remaining"] - planned_by_project[r["projectId"]])
+        added = 0
+        for m in missing:
+            hours = min(r["monthly"].get(m, 0.0), shortfall)
+            if hours > 0:
+                shortfall -= hours
+                added += 1
+            cells.append({"project_id": r["projectId"], "user_id": r["userId"], "month": m, "hours": max(hours, 0.0)})
+        planned_by_project[r["projectId"]] = r["remaining"] - shortfall
+        rows_touched += 1 if added else 0
     resource_planning.save_planned_hours_batch(cells)
-    logger.info("Resource Planning regenerated+saved by %r: %d rows, %d cells", user["username"], len(rows), len(cells))
-    msg = f"Regenerated the auto plan and saved it ({len(rows)} project rows across {len(months)} months)."
+    logger.info("Resource Planning fill-missing by %r: %d rows filled, %d cells", user["username"], rows_touched, len(cells))
+    msg = (f"Filled the missing plan: {rows_touched} project row(s) got new hours; "
+           "everything already saved was left untouched.")
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 

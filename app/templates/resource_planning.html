@@ -160,8 +160,8 @@
       <button class="rp-btn rp-btn-secondary" id="rp-import-btn" type="button" title="Import planned hours from an exported plan (matched by Rapport Code and consultant name)">Import from Excel</button>
     </form>
     <form method="post" action="/resource-planning/generate" style="display:inline;margin:0;"
-          onsubmit="return confirm('Regenerate the plan from Redmine data and SAVE it? This clears any existing saved hours, reassignments and splits, then saves a fresh auto allocation.\n\nThis cannot be undone.');">
-      <button class="rp-btn rp-btn-secondary" type="submit" title="Clear everything, then build and save the auto plan from Redmine data">Generate plan</button>
+          onsubmit="return confirm('Fill the plan from Redmine data?\n\nHours you already saved, reassignments and splits are kept. Only months with no saved value are filled, up to each project\'s remaining hours.');">
+      <button class="rp-btn rp-btn-secondary" type="submit" title="Keep everything saved; fill only the missing months up to each project's remaining hours">Generate plan</button>
     </form>
     <a class="rp-btn rp-btn-secondary" href="/resource-planning/template" style="text-decoration:none;display:inline-block;" title="Blank Excel sheet with drop-downs for project and consultant, to fill in and import">Download template</a>
     <form method="post" action="/resource-planning/clear" style="display:inline;margin:0;"

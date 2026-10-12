@@ -750,6 +750,40 @@ def build_resource_plan_workbook(months: list, rows: list, summary: list) -> byt
     detail_ws.freeze_panes = "A2"
     detail_ws.auto_filter.ref = f"A1:{get_column_letter(6 + len(months))}{detail_ws.max_row}"
 
+    # Planned hours rolled up by project country. Remaining hours count each
+    # project once (a split project has several rows but one remaining figure).
+    country_ws = wb.create_sheet("By Country", 1)
+    country_ws.append(["Country", "Projects", "Consultants", "Remaining Est. Hours"] + [f"{l} Planned" for l in month_labels] + ["Total Planned"])
+    for cell in country_ws[1]:
+        cell.font = bold
+    by_country = {}
+    for r in rows:
+        e = by_country.setdefault((r.get("country") or "").strip() or "(no country)",
+                                  {"projects": {}, "users": set(), "monthly": {m: 0.0 for m in months}})
+        e["projects"][r["projectId"]] = r["remaining"]
+        e["users"].add(r["userId"])
+        for m in months:
+            e["monthly"][m] += r["monthly"].get(m, 0.0)
+    totals = {"projects": 0, "remaining": 0.0, "monthly": {m: 0.0 for m in months}}
+    all_users = set()
+    for country in sorted(by_country, key=str.lower):
+        e = by_country[country]
+        remaining = sum(e["projects"].values())
+        planned = [e["monthly"][m] for m in months]
+        country_ws.append([country, len(e["projects"]), len(e["users"]), remaining] + planned + [sum(planned)])
+        totals["projects"] += len(e["projects"])
+        totals["remaining"] += remaining
+        all_users |= e["users"]
+        for m in months:
+            totals["monthly"][m] += e["monthly"][m]
+    total_planned = [totals["monthly"][m] for m in months]
+    country_ws.append(["TOTAL", totals["projects"], len(all_users), totals["remaining"]] + total_planned + [sum(total_planned)])
+    for cell in country_ws[country_ws.max_row]:
+        cell.font = bold
+    for i, width in enumerate([22, 10, 12, 20] + [16] * (len(months) + 1), start=1):
+        country_ws.column_dimensions[get_column_letter(i)].width = width
+    country_ws.freeze_panes = "B2"
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
