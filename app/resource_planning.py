@@ -909,6 +909,24 @@ def _match_header_month(value, months: list, label_to_month: dict):
     return None
 
 
+def get_aliases(kind: str) -> dict:
+    """alias (normalised label) -> target id, for hand-mapped import names."""
+    with db.get_db() as conn:
+        rows = conn.execute("SELECT alias, target_id FROM resource_plan_alias WHERE kind = ?", (kind,)).fetchall()
+        return {r["alias"]: r["target_id"] for r in rows}
+
+
+def save_alias(kind: str, label: str, target_id: int) -> None:
+    alias = _norm_text(label)
+    if not alias:
+        return
+    with db.get_db() as conn:
+        conn.execute(
+            "INSERT INTO resource_plan_alias (kind, alias, target_id) VALUES (?, ?, ?) "
+            "ON CONFLICT(kind, alias) DO UPDATE SET target_id = excluded.target_id",
+            (kind, alias, target_id))
+
+
 def _resolve_bare_months(bare: list, months: list) -> dict:
     """Give year-less month headers ('Feb', 'March', ...) a year. Columns are
     read left to right as one running calendar (the year steps up whenever the
@@ -1046,6 +1064,7 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
     cells = []
     seen_rows = skipped = unresolved_project = unresolved_user = 0
     unmatched = []
+    pending = []
     for raw in rows_iter:
         if raw is None or not any(c not in (None, "") for c in raw):
             continue
@@ -1069,12 +1088,25 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
             who = _norm_text(_cell(raw, "Consultant"))
             uid = user_by_name.get(who) or user_by_name.get(" ".join(sorted(who.replace(",", " ").split())))
 
-        if pid is None:
-            unresolved_project += 1; skipped += 1
-            unmatched.append(f"{_cell(raw, 'Rapport Code') or _cell(raw, 'Project')}".strip()); continue
-        if uid is None:
-            unresolved_user += 1; skipped += 1
-            unmatched.append(f"consultant '{_cell(raw, 'Consultant')}'"); continue
+        if pid is None or uid is None:
+            if pid is None:
+                unresolved_project += 1
+                unmatched.append(f"{_cell(raw, 'Rapport Code') or _cell(raw, 'Project')}".strip())
+            else:
+                unresolved_user += 1
+                unmatched.append(f"consultant '{_cell(raw, 'Consultant')}'")
+            skipped += 1
+            # Keep the row (with its hours) so it can be mapped by hand.
+            if id_mode:
+                plabel, ulabel = f"Project ID {_cell(raw, 'Project ID')}", f"User ID {_cell(raw, 'User ID')}"
+            else:
+                plabel = str(_cell(raw, "Rapport Code") or _cell(raw, "Project") or "").strip()
+                ulabel = str(_cell(raw, "Consultant") or "").strip()
+            pending.append({
+                "project_label": plabel, "project_id": pid, "user_label": ulabel, "user_id": uid,
+                "hours": {month: (_to_hours(raw[col]) if col < len(raw) else 0.0) for col, month in col_month.items()},
+            })
+            continue
 
         seen_rows += 1
         for col, month in col_month.items():
@@ -1086,5 +1118,6 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
                    "unresolved_project": unresolved_project,
                    "unresolved_user": unresolved_user,
                    "unmatched": list(dict.fromkeys(unmatched)),
+                   "pending": pending,
                    "months_matched": len(col_month),
                    "mode": "id" if id_mode else "name"}

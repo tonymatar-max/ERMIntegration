@@ -422,6 +422,18 @@ def init_db():
                 PRIMARY KEY (project_id, redmine_user_id)
             );
 
+            -- Names from imported planning sheets that a person mapped by hand
+            -- to a real project / consultant (the import mapping screen), so
+            -- the same label resolves automatically next time. `alias` is the
+            -- label lower-cased with whitespace collapsed; kind is 'project'
+            -- or 'user'.
+            CREATE TABLE IF NOT EXISTS resource_plan_alias (
+                kind TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                target_id INTEGER NOT NULL,
+                PRIMARY KEY (kind, alias)
+            );
+
             -- A locked snapshot of the Resource Planning plan for one month:
             -- the planned hours per (project, consultant) frozen at lock time,
             -- so the plan that was committed for e.g. October can later be

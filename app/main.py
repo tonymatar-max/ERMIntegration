@@ -2307,6 +2307,13 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
     user_by_name = {k: next(iter(ids)) for k, ids in key_to_ids.items() if len(ids) == 1}
     uid_name = dict(names_by_id)
 
+    # Names a person already mapped by hand on the mapping screen.
+    for alias, pid in resource_planning.get_aliases("project").items():
+        project_by_name.setdefault(alias, pid)
+        project_by_code.setdefault(alias, pid)
+    for alias, uid in resource_planning.get_aliases("user").items():
+        user_by_name.setdefault(alias, uid)
+
     try:
         data = await file.read()
         cells, stats = resource_planning.parse_resource_plan_workbook(
@@ -2317,6 +2324,14 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
     except Exception as e:
         logger.exception("Resource Planning import failed for %r", user["username"])
         return RedirectResponse(f"/resource-planning?import_error={quote('Unexpected error reading the file: ' + str(e))}", status_code=302)
+
+    if stats["pending"]:
+        # Some rows couldn't be matched — park the whole import and let the
+        # user map those names by hand instead of silently dropping them.
+        import secrets
+        token = secrets.token_hex(8)
+        settings_store.save_cache(f"rp_import_{token}", [{"cells": cells, "pending": stats["pending"]}])
+        return RedirectResponse(f"/resource-planning/map?token={token}", status_code=302)
 
     if not cells:
         hint = "No rows could be matched to your projects."
@@ -2336,6 +2351,123 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
                 f" ({stats['unresolved_project']} no project match,"
                 f" {stats['unresolved_user']} no consultant match): "
                 + "; ".join(stats["unmatched"][:10]) + (" …" if len(stats["unmatched"]) > 10 else "") + ".")
+    return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+def _rp_mapping_options(user: dict):
+    """(plannable projects, {user id: name}) for the import mapping screen."""
+    projects, _ = settings_store.load_cache("projects")
+    timespent, _ = settings_store.load_cache("timespent")
+    projects = _visible_projects(projects, user)
+    timespent = _visible_timespent(timespent, {p["id"] for p in projects})
+    if not _assigned_manager_id(user):
+        projects, timespent = pp_report.with_ksa(projects, timespent)
+    names = {}
+    for r in resource_planning.build_plan(projects, timespent, resource_planning.plan_months()):
+        if r.get("userName"):
+            names.setdefault(r["userId"], r["userName"])
+    for u in settings_store.distinct_timesheet_users(timespent):
+        if u.get("id") and u.get("name"):
+            names.setdefault(u["id"], u["name"])
+    opts = [p for p in projects if p.get("status") != "Closed"]
+    opts.sort(key=lambda p: (p.get("name") or "").lower())
+    return opts, names
+
+
+def _rp_suggest(label: str, candidates: dict):
+    """Closest candidate id for an unmatched label (word order ignored), or None."""
+    import difflib
+    def key(s):
+        return " ".join(sorted(str(s or "").lower().replace(",", " ").replace("-", " ").split()))
+    by_key = {key(text): cid for cid, text in candidates.items()}
+    hit = difflib.get_close_matches(key(label), list(by_key), n=1, cutoff=0.6)
+    return by_key[hit[0]] if hit else None
+
+
+@app.get("/resource-planning/map", response_class=HTMLResponse)
+def resource_planning_map_page(request: Request, token: str = ""):
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    payload, _ = settings_store.load_cache(f"rp_import_{token}")
+    if not payload:
+        return RedirectResponse(f"/resource-planning?import_error={quote('That import has expired - upload the file again.')}", status_code=302)
+    pending = payload[0]["pending"]
+    proj_opts, user_names = _rp_mapping_options(user)
+    proj_text = {p["id"]: f"{p.get('rapportCode') or ''} {p.get('name') or ''}".strip() for p in proj_opts}
+
+    def collect(label_key, id_key, candidates):
+        seen = {}
+        for row in pending:
+            if row[id_key] is not None:
+                continue
+            label = row[label_key]
+            e = seen.setdefault(label, {"label": label, "rows": 0, "hours": 0.0})
+            e["rows"] += 1
+            e["hours"] += sum(row["hours"].values())
+        for e in seen.values():
+            e["suggested"] = _rp_suggest(e["label"], candidates)
+        return list(seen.values())
+
+    return templates.TemplateResponse("resource_planning_map.html", {
+        "request": request, "user": user, "token": token,
+        "unmatched_projects": collect("project_label", "project_id", proj_text),
+        "unmatched_users": collect("user_label", "user_id", user_names),
+        "project_options": [{"id": i, "text": t} for i, t in proj_text.items()],
+        "user_options": sorted(({"id": i, "text": n} for i, n in user_names.items()), key=lambda o: o["text"].lower()),
+        "ok_rows": len({(c["project_id"], c["user_id"]) for c in payload[0]["cells"]}),
+        "pending_rows": len(pending),
+        **_refresh_timing_context(),
+    })
+
+
+@app.post("/resource-planning/map")
+async def resource_planning_map_apply(request: Request):
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    form = await request.form()
+    token = str(form.get("token") or "")
+    payload, _ = settings_store.load_cache(f"rp_import_{token}")
+    if not payload:
+        return RedirectResponse(f"/resource-planning?import_error={quote('That import has expired - upload the file again.')}", status_code=302)
+    cells = list(payload[0]["cells"])
+    pending = payload[0]["pending"]
+    _, user_names = _rp_mapping_options(user)
+    months = resource_planning.plan_months()
+
+    def choice(prefix, label):
+        v = str(form.get(f"{prefix}::{label}") or "")
+        return int(v) if v.isdigit() else None   # empty / 'skip' -> None
+
+    remember = form.get("remember") == "1"
+    applied_rows = dropped = 0
+    for row in pending:
+        pid = row["project_id"] if row["project_id"] is not None else choice("p", row["project_label"])
+        uid = row["user_id"] if row["user_id"] is not None else choice("u", row["user_label"])
+        if pid is None or uid is None:
+            dropped += 1
+            continue
+        applied_rows += 1
+        for month, hours in row["hours"].items():
+            cells.append({"project_id": pid, "user_id": uid, "month": month, "hours": hours})
+    if remember:
+        for row in pending:
+            if row["project_id"] is None and (pid := choice("p", row["project_label"])) is not None:
+                resource_planning.save_alias("project", row["project_label"], pid)
+            if row["user_id"] is None and (uid := choice("u", row["user_label"])) is not None:
+                resource_planning.save_alias("user", row["user_label"], uid)
+
+    if not cells:
+        return RedirectResponse(f"/resource-planning?import_error={quote('Nothing was mapped, so nothing was imported.')}", status_code=302)
+    _safe_backup("pre-import")
+    applied = resource_planning.apply_imported_plan(cells, user_names, months)
+    with db.get_db() as conn:
+        conn.execute("DELETE FROM fetch_cache WHERE kind = ?", (f"rp_import_{token}",))
+    logger.info("Resource Planning import (mapped) by %r: %d projects, %d mapped rows, %d skipped",
+                user["username"], applied["projects"], applied_rows, dropped)
+    msg = f"Imported onto {applied['projects']} project(s); {applied_rows} row(s) mapped by hand"
+    msg += f", {dropped} skipped." if dropped else "."
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
 
 

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Map import &mdash; ERM{% endblock %}
+{% block content %}
+<style>
+  .map-wrap { max-width: 1100px; margin: 0 auto; padding: 0 1rem 2rem; }
+  .map-table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1.5rem; font-size: 0.88rem; }
+  .map-table th, .map-table td { padding: 0.5rem 0.6rem; border-top: 1px solid #f0f2f5; text-align: left; vertical-align: middle; }
+  .map-table thead th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--seidor-ink-soft); border-top: none; }
+  .map-table select { width: 100%; max-width: 38rem; padding: 0.35rem; border: 1px solid #dde3e8; border-radius: 5px; font-size: 0.85rem; }
+  .map-label { font-weight: 600; }
+  .map-sub { color: var(--seidor-ink-soft); font-size: 0.78rem; }
+  .map-tag { font-size: 0.68rem; background: #eef2f8; color: var(--seidor-blue); padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.4rem; }
+  .map-actions { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
+</style>
+<div class="map-wrap">
+  <h1>Map the unmatched names</h1>
+  <p class="hint">
+    {{ ok_rows }} project/consultant pair(s) in the file matched automatically.
+    {{ pending_rows }} row(s) have a project or consultant name the portal doesn't recognise &mdash;
+    choose who they are below (a suggestion is pre-selected where one looks close), or leave
+    <em>Skip</em> to drop them. Nothing is saved until you press Import.
+  </p>
+
+  <form method="post" action="/resource-planning/map">
+    <input type="hidden" name="token" value="{{ token }}">
+
+    {% if unmatched_projects %}
+    <h3>Projects</h3>
+    <table class="map-table">
+      <thead><tr><th style="width:32%;">Name in the file</th><th>Project in the portal</th></tr></thead>
+      <tbody>
+        {% for e in unmatched_projects %}
+        <tr>
+          <td><span class="map-label">{{ e.label }}</span><br>
+              <span class="map-sub">{{ e.rows }} row(s), {{ "%.0f"|format(e.hours) }}h</span></td>
+          <td>
+            <select name="p::{{ e.label }}">
+              <option value="">Skip these rows</option>
+              {% for o in project_options %}
+              <option value="{{ o.id }}" {{ 'selected' if o.id == e.suggested else '' }}>{{ o.text }}</option>
+              {% endfor %}
+            </select>
+            {% if e.suggested %}<span class="map-tag">suggested</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if unmatched_users %}
+    <h3>Consultants</h3>
+    <table class="map-table">
+      <thead><tr><th style="width:32%;">Name in the file</th><th>Consultant in the portal</th></tr></thead>
+      <tbody>
+        {% for e in unmatched_users %}
+        <tr>
+          <td><span class="map-label">{{ e.label }}</span><br>
+              <span class="map-sub">{{ e.rows }} row(s), {{ "%.0f"|format(e.hours) }}h</span></td>
+          <td>
+            <select name="u::{{ e.label }}">
+              <option value="">Skip these rows</option>
+              {% for o in user_options %}
+              <option value="{{ o.id }}" {{ 'selected' if o.id == e.suggested else '' }}>{{ o.text }}</option>
+              {% endfor %}
+            </select>
+            {% if e.suggested %}<span class="map-tag">suggested</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <label style="font-size:0.88rem;"><input type="checkbox" name="remember" value="1" checked>
+      Remember these choices &mdash; the same names map automatically on the next import</label>
+    <div class="map-actions">
+      <button class="rp-btn" type="submit" style="background:var(--seidor-blue);color:#fff;border:none;border-radius:8px;padding:0.55rem 1.1rem;font-weight:600;cursor:pointer;">Import</button>
+      <a href="/resource-planning">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
