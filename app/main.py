@@ -1983,7 +1983,8 @@ def pp_report_export(month: str, request: Request):
 
 
 @app.get("/pp-report/{month}/performance-export")
-def pp_report_performance_export(month: str, request: Request):
+def pp_report_performance_export(month: str, request: Request, search: str = "", country: str = "",
+                                 max_margin: str = "", basis: str = "marginPct"):
     user = require_login(request)
     if not user:
         return RedirectResponse("/login")
@@ -1996,6 +1997,20 @@ def pp_report_performance_export(month: str, request: Request):
     report["rows"] = _visible_report_rows(report["rows"], user)
 
     performance_rows = pp_report.performance_rows_for(report["rows"])
+    # Same filters as the Performance tab on screen.
+    term = search.strip().lower()
+    if term:
+        performance_rows = [r for r in performance_rows
+                            if term in (r["project"] or "").lower() or term in (r["country"] or "").lower()]
+    if country:
+        performance_rows = [r for r in performance_rows if (r["country"] or "").lower() == country.lower()]
+    field = {"marginPct": "marginPctToDate", "marginYtd": "marginPctYtd", "marginToGo": "marginPctToGo"}.get(basis, "marginPctToDate")
+    try:
+        limit = float(max_margin) if max_margin.strip() else None
+    except ValueError:
+        limit = None
+    if limit is not None:
+        performance_rows = [r for r in performance_rows if r[field] * 100 <= limit + 1e-9]
     xlsx_bytes = pp_report.build_performance_workbook(month, performance_rows)
     logger.info("Projects Performance report exported by %r for %s", user["username"], month)
 

@@ -1353,7 +1353,10 @@
       perfExportBtn.disabled = true;
       if (perfExportProgress) perfExportProgress.hidden = false;
       try {
-        const resp = await fetch(`/pp-report/${perfExportBtn.dataset.month}/performance-export`);
+        const qs = new URLSearchParams({
+          search: perfSearch.value || '', country: perfCountry.value || '',
+          max_margin: perfMaxMargin.value || '', basis: perfMarginBasis.value });
+        const resp = await fetch(`/pp-report/${perfExportBtn.dataset.month}/performance-export?${qs}`);
         if (!resp.ok) throw new Error(`Export failed (HTTP ${resp.status}).`);
         const blob = await resp.blob();
         const disposition = resp.headers.get('Content-Disposition') || '';
