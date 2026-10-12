@@ -548,8 +548,16 @@
           </select>
         </div>
         <div class="pp-field">
-          <label for="perf-max-margin">Max Margin% to date</label>
+          <label for="perf-max-margin">Max Margin%</label>
           <input type="number" id="perf-max-margin" placeholder="e.g. 10" step="1">
+        </div>
+        <div class="pp-field">
+          <label for="perf-margin-basis">Applies to</label>
+          <select id="perf-margin-basis">
+            <option value="marginPct">Performance to date</option>
+            <option value="marginYtd">Performance YTD</option>
+            <option value="marginToGo">Performance to Go</option>
+          </select>
         </div>
         <button class="pp-btn" id="pp-performance-export-btn" type="button" data-month="{{ month }}">Export to Excel</button>
         <span class="pp-export-progress" id="pp-performance-export-progress" hidden>Generating&hellip;</span>
@@ -576,7 +584,7 @@
           </thead>
           <tbody id="perf-tbody">
             {% for r in performance_rows %}
-            <tr data-country="{{ r.country|lower }}" data-project="{{ r.project|lower }}" data-margin-pct="{{ '%.4f'|format(r.marginPctToDate * 100) }}">
+            <tr data-country="{{ r.country|lower }}" data-project="{{ r.project|lower }}" data-margin-pct="{{ '%.4f'|format(r.marginPctToDate * 100) }}" data-margin-ytd="{{ '%.4f'|format(r.marginPctYtd * 100) }}" data-margin-to-go="{{ '%.4f'|format(r.marginPctToGo * 100) }}">
               <td class="name-cell">{{ r.country }}</td>
               <td class="name-cell">{{ r.project }}</td>
               <td>{{ "{:,.0f}".format(r.revToDate) }}</td>
@@ -1309,6 +1317,7 @@
   const perfSearch = document.getElementById('perf-search');
   const perfCountry = document.getElementById('perf-country');
   const perfMaxMargin = document.getElementById('perf-max-margin');
+  const perfMarginBasis = document.getElementById('perf-margin-basis');
   const perfTbody = document.getElementById('perf-tbody');
   const perfCountHint = document.getElementById('perf-count-hint');
   if (perfTbody) {
@@ -1322,7 +1331,7 @@
       perfRows.forEach(row => {
         const matchesSearch = !search || row.dataset.project.includes(search) || row.dataset.country.includes(search);
         const matchesCountry = !country || row.dataset.country === country.toLowerCase();
-        const marginPct = parseFloat(row.dataset.marginPct);
+        const marginPct = parseFloat(row.dataset[{ marginPct: 'marginPct', marginYtd: 'marginYtd', marginToGo: 'marginToGo' }[perfMarginBasis.value] || 'marginPct']);
         const matchesMargin = maxMargin === null || (!isNaN(marginPct) && marginPct <= maxMargin);
         const show = matchesSearch && matchesCountry && matchesMargin;
         row.hidden = !show;
@@ -1333,6 +1342,7 @@
     perfSearch.addEventListener('input', applyPerfFilter);
     perfCountry.addEventListener('change', applyPerfFilter);
     perfMaxMargin.addEventListener('input', applyPerfFilter);
+    perfMarginBasis.addEventListener('change', applyPerfFilter);
     applyPerfFilter();
   }
 
