@@ -163,6 +163,7 @@
           onsubmit="return confirm('Regenerate the plan from Redmine data and SAVE it? This clears any existing saved hours, reassignments and splits, then saves a fresh auto allocation.\n\nThis cannot be undone.');">
       <button class="rp-btn rp-btn-secondary" type="submit" title="Clear everything, then build and save the auto plan from Redmine data">Generate plan</button>
     </form>
+    <a class="rp-btn rp-btn-secondary" href="/resource-planning/template" style="text-decoration:none;display:inline-block;" title="Blank Excel sheet with drop-downs for project and consultant, to fill in and import">Download template</a>
     <form method="post" action="/resource-planning/clear" style="display:inline;margin:0;"
           onsubmit="return confirm('Clear ALL saved planning data (planned hours, reassignments and split rows)?\n\nNothing will be saved afterwards — use this before importing from Excel for a clean slate. This cannot be undone.');">
       <button class="rp-btn rp-btn-secondary" type="submit" title="Delete all saved planning data (use before an Excel import for a clean slate)">Clear plan</button>

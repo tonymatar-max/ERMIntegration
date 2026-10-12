@@ -237,7 +237,7 @@ def apply_imported_plan(cells: list, uid_name: dict, months: list) -> dict:
     per = defaultdict(lambda: defaultdict(lambda: {m: 0.0 for m in months}))  # pid -> uid -> {month: hours}
     for c in cells:
         if c["month"] in months:
-            per[c["project_id"]][c["user_id"]][c["month"]] = c["hours"]
+            per[c["project_id"]][c["user_id"]][c["month"]] += c["hours"]
 
     # Persist every window month for each imported pair (0 where unspecified),
     # so the reassigned/normal row never auto-fills a blank month.
@@ -779,6 +779,94 @@ def consultant_summary(rows: list, months: list) -> list:
     return summary
 
 
+def build_import_template(months: list, projects: list, consultants: list, blank_rows: int = 300) -> bytes:
+    """A blank planning sheet for consultants/PMs to fill in and send back for
+    import: Rapport Code and Consultant are drop-downs (fed from a hidden
+    'Lists' sheet), the project name fills itself in, and the month cells only
+    accept non-negative numbers. Its header row is exactly what
+    parse_resource_plan_workbook reads, so the filled file imports as-is."""
+    import io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    labels = [format_month_label(m) for m in months]
+    plannable = sorted(
+        {(p["rapportCode"].strip(), p.get("name") or "") for p in projects
+         if p.get("rapportCode") and p.get("status") != "Closed"})
+    people = sorted({c for c in consultants if c})
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Detail"  # the importer prefers a sheet with this name
+    lists = wb.create_sheet("Lists")
+    lists.append(["Rapport Code", "Project", "Consultant"])
+    for i in range(max(len(plannable), len(people))):
+        code, name = plannable[i] if i < len(plannable) else (None, None)
+        lists.append([code, name, people[i] if i < len(people) else None])
+    lists.sheet_state = "hidden"
+    last_code = max(len(plannable) + 1, 2)
+    last_person = max(len(people) + 1, 2)
+
+    header = ["Rapport Code", "Project", "Consultant"] + labels + ["Total"]
+    ws.append(header)
+    fill = PatternFill("solid", fgColor="2F2F8C")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = fill
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+    first_m, last_m = get_column_letter(4), get_column_letter(3 + len(labels))
+    for r in range(2, blank_rows + 2):
+        ws.cell(row=r, column=2, value=(
+            f'=IFERROR(INDEX(Lists!$B$2:$B${last_code},MATCH(A{r},Lists!$A$2:$A${last_code},0)),"")'))
+        ws.cell(row=r, column=4 + len(labels), value=f"=SUM({first_m}{r}:{last_m}{r})")
+
+    last_row = blank_rows + 1
+    dv_code = DataValidation(type="list", formula1=f"=Lists!$A$2:$A${last_code}", allow_blank=True,
+                             showErrorMessage=True, errorTitle="Unknown project",
+                             error="Pick a Rapport Code from the list.")
+    dv_user = DataValidation(type="list", formula1=f"=Lists!$C$2:$C${last_person}", allow_blank=True,
+                             showErrorMessage=True, errorTitle="Unknown consultant",
+                             error="Pick a consultant from the list.")
+    dv_hours = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0", allow_blank=True,
+                              showErrorMessage=True, errorTitle="Hours",
+                              error="Enter planned hours as a number (0 or more).")
+    ws.add_data_validation(dv_code); ws.add_data_validation(dv_user); ws.add_data_validation(dv_hours)
+    dv_code.add(f"A2:A{last_row}")
+    dv_user.add(f"C2:C{last_row}")
+    dv_hours.add(f"{first_m}2:{last_m}{last_row}")
+
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 55
+    ws.column_dimensions["C"].width = 28
+    for i in range(len(labels) + 1):
+        ws.column_dimensions[get_column_letter(4 + i)].width = 12
+    ws.freeze_panes = "D2"
+
+    info = wb.create_sheet("Instructions", 0)
+    for line in [
+        "Resource Planning - how to fill this in",
+        "",
+        "1. Go to the 'Detail' sheet. One row = one project + one consultant.",
+        "2. Pick the Rapport Code and the Consultant from the drop-downs. The project name fills itself in.",
+        "3. Type the planned hours per month. Leave a month empty for 0.",
+        "4. If a project has several consultants, add one row for each of them.",
+        "5. Do not rename the header row or the 'Lists' sheet. Send the file back for import.",
+        f"Planning window: {labels[0]} to {labels[-1]}.",
+    ]:
+        info.append([line])
+    info["A1"].font = Font(bold=True, size=13)
+    info.column_dimensions["A"].width = 100
+    wb.active = 1  # open on 'Detail'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 class ImportError_(Exception):
     """Raised by parse_resource_plan_workbook when the file can't be read."""
 
@@ -819,6 +907,35 @@ def _match_header_month(value, months: list, label_to_month: dict):
         if len(hits) == 1:
             return hits[0]
     return None
+
+
+def _resolve_bare_months(bare: list, months: list) -> dict:
+    """Give year-less month headers ('Feb', 'March', ...) a year. Columns are
+    read left to right as one running calendar (the year steps up whenever the
+    month number drops, e.g. Nov, Dec, Jan), and the starting year is the one
+    that lands the most columns inside the planning window. A file covering
+    Feb-Dec 2026 therefore feeds Oct-Dec 2026 and never leaks its Feb/Mar into
+    the window's Feb/Mar 2027. Returns {column index: 'YYYY-MM'} for the
+    columns that fall inside `months`."""
+    if not bare:
+        return {}
+    offsets, off, prev = [], 0, None
+    for _, mnum in bare:
+        if prev is not None and mnum < prev:
+            off += 1
+        offsets.append(off)
+        prev = mnum
+    window_years = {int(m[:4]) for m in months}
+    best = None
+    for base in sorted({y - k for y in window_years for k in (0, 1)}):
+        hits = {}
+        for (idx, mnum), o in zip(bare, offsets):
+            key = f"{base + o:04d}-{mnum:02d}"
+            if key in months:
+                hits[idx] = key
+        if best is None or len(hits) > len(best):
+            best = hits
+    return best or {}
 
 
 def parse_resource_plan_workbook(file_bytes: bytes, months: list,
@@ -866,18 +983,28 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
         "project id": "Project ID", "user id": "User ID",
         "rapport code": "Rapport Code", "project code": "Rapport Code", "code": "Rapport Code",
         "project": "Project", "project name": "Project",
+        "project / work": "Project", "project/work": "Project", "work": "Project",
         "consultant": "Consultant", "resource": "Consultant", "ressource": "Consultant",
     }
     col_month = {}
     cols = {}  # canonical column name -> index
+    bare = []  # (idx, month number) for year-less headers like 'Oct' / 'March'
     for idx, h in enumerate(header):
         canon = ALIASES.get(_norm_text(h))
         if canon and canon not in cols:
             cols[canon] = idx
             continue
+        s = str(h or "").strip()
+        if s and not hasattr(h, "year") and s not in label_to_month and _MONTH_ABBR.get(s[:3].lower()):
+            bare.append((idx, _MONTH_ABBR[s[:3].lower()]))
+            continue
         m = _match_header_month(h, months, label_to_month)
-        if m is not None and idx not in col_month:
+        # First column wins: a side table further right that repeats the month
+        # headers (capacities, totals) must not be read as hours.
+        if m is not None and idx not in col_month and m not in col_month.values():
             col_month[idx] = m
+    taken = set(col_month.values())
+    col_month.update({i: m for i, m in _resolve_bare_months(bare, months).items() if m not in taken})
 
     if not col_month:
         raise ImportError_(
@@ -918,6 +1045,7 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
 
     cells = []
     seen_rows = skipped = unresolved_project = unresolved_user = 0
+    unmatched = []
     for raw in rows_iter:
         if raw is None or not any(c not in (None, "") for c in raw):
             continue
@@ -930,13 +1058,23 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
             name = _norm_text(_cell(raw, "Project"))
             pid = (project_by_code.get(code) if code else None)
             if pid is None and name:
-                pid = project_by_name.get(name)
-            uid = user_by_name.get(_norm_text(_cell(raw, "Consultant")))
+                # A 'Project' column often holds the Rapport code, not the name.
+                pid = project_by_name.get(name) or project_by_code.get(name)
+            if pid is None and len(name) >= 12:
+                # Names cut at a fixed width ('CR - Qatar Rails - Clariba Developm')
+                # match the one project whose name starts with them.
+                hits = {i for n, i in project_by_name.items() if n.startswith(name)}
+                if len(hits) == 1:
+                    pid = next(iter(hits))
+            who = _norm_text(_cell(raw, "Consultant"))
+            uid = user_by_name.get(who) or user_by_name.get(" ".join(sorted(who.replace(",", " ").split())))
 
         if pid is None:
-            unresolved_project += 1; skipped += 1; continue
+            unresolved_project += 1; skipped += 1
+            unmatched.append(f"{_cell(raw, 'Rapport Code') or _cell(raw, 'Project')}".strip()); continue
         if uid is None:
-            unresolved_user += 1; skipped += 1; continue
+            unresolved_user += 1; skipped += 1
+            unmatched.append(f"consultant '{_cell(raw, 'Consultant')}'"); continue
 
         seen_rows += 1
         for col, month in col_month.items():
@@ -947,5 +1085,6 @@ def parse_resource_plan_workbook(file_bytes: bytes, months: list,
     return cells, {"rows": seen_rows, "cells": len(cells), "skipped": skipped,
                    "unresolved_project": unresolved_project,
                    "unresolved_user": unresolved_user,
+                   "unmatched": list(dict.fromkeys(unmatched)),
                    "months_matched": len(col_month),
                    "mode": "id" if id_mode else "name"}

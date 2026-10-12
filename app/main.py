@@ -2295,6 +2295,8 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
         if len(parts) >= 2:
             variants.add(" ".join(reversed(parts)))  # "last, first" <-> "first last"
         variants.update(parts)  # individual tokens (first/last name alone)
+        if len(parts) >= 2:
+            variants.add(" ".join(sorted(parts)))  # any word order ("Al Saadi Ahmad")
         return variants
 
     key_to_ids = {}
@@ -2319,7 +2321,8 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
     if not cells:
         hint = "No rows could be matched to your projects."
         if stats["unresolved_project"] or stats["unresolved_user"]:
-            hint += f" {stats['unresolved_project']} couldn't match a project, {stats['unresolved_user']} a consultant."
+            hint += (f" {stats['unresolved_project']} couldn't match a project, {stats['unresolved_user']} a consultant: "
+                     + "; ".join(stats["unmatched"][:10]) + ".")
         return RedirectResponse(f"/resource-planning?import_error={quote(hint)}", status_code=302)
 
     _safe_backup("pre-import")
@@ -2331,8 +2334,34 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
     if stats["skipped"]:
         msg += (f" {stats['skipped']} row(s) skipped"
                 f" ({stats['unresolved_project']} no project match,"
-                f" {stats['unresolved_user']} no consultant match).")
+                f" {stats['unresolved_user']} no consultant match): "
+                + "; ".join(stats["unmatched"][:10]) + (" …" if len(stats["unmatched"]) > 10 else "") + ".")
     return RedirectResponse(f"/resource-planning?import_ok={quote(msg)}", status_code=302)
+
+
+@app.get("/resource-planning/template")
+def resource_planning_template(request: Request):
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+
+    projects, _ = settings_store.load_cache("projects")
+    timespent, _ = settings_store.load_cache("timespent")
+    projects = _visible_projects(projects, user)
+    timespent = _visible_timespent(timespent, {p["id"] for p in projects})
+    if not _assigned_manager_id(user):
+        projects, timespent = pp_report.with_ksa(projects, timespent)
+    months = resource_planning.plan_months()
+
+    names = {r["userName"] for r in resource_planning.build_plan(projects, timespent, months) if r.get("userName")}
+    names |= {u["name"] for u in settings_store.distinct_timesheet_users(timespent) if u.get("name")}
+    xlsx_bytes = resource_planning.build_import_template(months, projects, sorted(names))
+    logger.info("Resource Planning template downloaded by %r", user["username"])
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Resource Planning Template.xlsx"'},
+    )
 
 
 @app.post("/resource-planning/clear")
