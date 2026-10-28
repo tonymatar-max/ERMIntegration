@@ -317,6 +317,16 @@ def logout():
     return resp
 
 
+@app.get("/version", response_class=PlainTextResponse)
+def version():
+    """Which build is deployed — lets you confirm a copy + restart actually took."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "BUILD.txt"), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return "unknown build"
+
+
 @app.get("/forgot-password", response_class=HTMLResponse)
 def forgot_password_form(request: Request):
     return templates.TemplateResponse("forgot_password.html", {
