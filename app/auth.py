@@ -16,6 +16,44 @@ def _serializer():
     return URLSafeTimedSerializer(appkey.get_key(), salt="erm-session")
 
 
+# Password-reset tokens use a SEPARATE salt from session cookies, so a reset
+# link can never be used as a session and vice-versa. Short-lived (1 hour).
+RESET_MAX_AGE_SECONDS = 3600
+
+
+def _reset_serializer():
+    return URLSafeTimedSerializer(appkey.get_key(), salt="erm-password-reset")
+
+
+def make_reset_token(user_id: int) -> str:
+    return _reset_serializer().dumps({"uid": user_id})
+
+
+def read_reset_token(token: str):
+    """Returns the user id for a valid, unexpired reset token, else None."""
+    if not token:
+        return None
+    try:
+        data = _reset_serializer().loads(token, max_age=RESET_MAX_AGE_SECONDS)
+    except (BadSignature, Exception):
+        return None
+    return data.get("uid")
+
+
+def find_user_by_login(identifier: str):
+    """Look up a user by username OR email (case-insensitive), for the
+    forgot-password flow. Returns the row dict or None."""
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    with db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id, username, email FROM users WHERE lower(username) = lower(?) OR (email <> '' AND lower(email) = lower(?))",
+            (ident, ident),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 

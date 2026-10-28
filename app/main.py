@@ -317,6 +317,90 @@ def logout():
     return resp
 
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_form(request: Request):
+    return templates.TemplateResponse("forgot_password.html", {
+        "request": request, "user": None, "error": None, "ok": None,
+        "smtp_ready": mailer.is_configured(),
+    })
+
+
+@app.post("/forgot-password", response_class=HTMLResponse)
+def forgot_password_submit(request: Request, identifier: str = Form(...)):
+    """Emails a time-limited reset link. Always responds the same way whether or
+    not the account exists (no user enumeration); the real outcome is logged."""
+    identifier = identifier.strip()
+    generic_ok = ("If an account with that username or email exists and has an "
+                  "email address on file, a password-reset link has been sent. "
+                  "The link expires in 1 hour.")
+    ctx = {"request": request, "user": None, "error": None, "smtp_ready": mailer.is_configured()}
+
+    if not mailer.is_configured():
+        logger.warning("Forgot-password requested for %r but SMTP is not configured", identifier)
+        return templates.TemplateResponse("forgot_password.html", {**ctx,
+            "error": "Password reset by email isn't available because outgoing email (SMTP) isn't configured. Ask an admin to reset your password."})
+
+    target = auth.find_user_by_login(identifier)
+    if target and (target.get("email") or "").strip():
+        token = auth.make_reset_token(target["id"])
+        link = str(request.base_url).rstrip("/") + "/reset-password/" + token
+        try:
+            mailer.send_email(
+                target["email"],
+                "ERM Project Ledger — password reset",
+                f"A password reset was requested for your ERM account '{target['username']}'.\n\n"
+                f"Open this link to set a new password (valid for 1 hour):\n{link}\n\n"
+                f"If you didn't request this, you can ignore this email — your password won't change.",
+                html=(f"<p>A password reset was requested for your ERM account "
+                      f"<strong>{target['username']}</strong>.</p>"
+                      f"<p><a href=\"{link}\">Set a new password</a> (link valid for 1 hour).</p>"
+                      f"<p style=\"color:#666;font-size:13px\">If you didn't request this, ignore this email — your password won't change.</p>"),
+            )
+            logger.info("Password-reset email sent to user %r", target["username"])
+        except mailer.MailError as e:
+            logger.warning("Password-reset email FAILED for %r: %s", target["username"], e)
+    else:
+        logger.info("Forgot-password for %r — no matching account with an email (generic response shown)", identifier)
+
+    return templates.TemplateResponse("forgot_password.html", {**ctx, "ok": generic_ok})
+
+
+@app.get("/reset-password/{token}", response_class=HTMLResponse)
+def reset_password_form(request: Request, token: str):
+    uid = auth.read_reset_token(token)
+    if not uid or not auth.get_user(uid):
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request, "user": None, "token": "", "error":
+            "This reset link is invalid or has expired. Request a new one.", "ok": None})
+    return templates.TemplateResponse("reset_password.html", {
+        "request": request, "user": None, "token": token, "error": None, "ok": None})
+
+
+@app.post("/reset-password/{token}", response_class=HTMLResponse)
+def reset_password_submit(request: Request, token: str, new_password: str = Form(...), new_password2: str = Form(...)):
+    uid = auth.read_reset_token(token)
+    target = auth.get_user(uid) if uid else None
+    if not target:
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request, "user": None, "token": "", "error":
+            "This reset link is invalid or has expired. Request a new one.", "ok": None})
+
+    error = None
+    if new_password != new_password2:
+        error = "Passwords do not match."
+    elif len(new_password) < 8:
+        error = "Password must be at least 8 characters."
+    if error:
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request, "user": None, "token": token, "error": error, "ok": None})
+
+    auth.set_password(target["id"], new_password)
+    logger.info("Password reset via email link for user %r", target["username"])
+    return templates.TemplateResponse("reset_password.html", {
+        "request": request, "user": None, "token": "", "error": None,
+        "ok": "Your password has been reset. You can now sign in."})
+
+
 # ---------------------------------------------------------------------------
 # Settings — per-user preferences (My Team, Project Manager id)
 # ---------------------------------------------------------------------------
