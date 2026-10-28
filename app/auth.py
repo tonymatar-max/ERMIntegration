@@ -24,7 +24,7 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("ascii"))
 
 
-def create_user(username: str, password: str, is_admin: bool = False, manager_id: str = "", email: str = ""):
+def create_user(username: str, password: str, is_admin: bool = False, manager_id: str = "", email: str = "", country: str = ""):
     with db.get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
         if existing:
@@ -35,7 +35,8 @@ def create_user(username: str, password: str, is_admin: bool = False, manager_id
         )
         user_id = cur.lastrowid
         conn.execute(
-            "INSERT INTO user_prefs (user_id, manager_id) VALUES (?, ?)", (user_id, manager_id.strip())
+            "INSERT INTO user_prefs (user_id, manager_id, country) VALUES (?, ?, ?)",
+            (user_id, manager_id.strip(), (country or "").strip()),
         )
         return user_id
 
@@ -119,7 +120,8 @@ def list_users():
     with db.get_db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.username, u.is_admin, u.created_on, u.email, COALESCE(p.manager_id, '') AS manager_id
+            SELECT u.id, u.username, u.is_admin, u.created_on, u.email,
+                   COALESCE(p.manager_id, '') AS manager_id, COALESCE(p.country, '') AS country
             FROM users u
             LEFT JOIN user_prefs p ON p.user_id = u.id
             ORDER BY u.is_admin DESC, u.username COLLATE NOCASE

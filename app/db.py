@@ -113,6 +113,10 @@ def _migrate(conn):
     column to a table that's already on disk from an earlier version."""
     if not _column_exists(conn, "users", "is_admin"):
         conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+    # Per-user country restriction (admin-assigned) — scopes a regular user to
+    # a single country everywhere, e.g. a KSA PM who should see all KSA work.
+    if _table_exists(conn, "user_prefs") and not _column_exists(conn, "user_prefs", "country"):
+        conn.execute("ALTER TABLE user_prefs ADD COLUMN country TEXT NOT NULL DEFAULT ''")
     if not _column_exists(conn, "pp_report_overrides", "risk"):
         conn.execute("ALTER TABLE pp_report_overrides ADD COLUMN risk REAL")
     if not _column_exists(conn, "pp_report_overrides", "completion_override"):
@@ -346,6 +350,7 @@ def init_db():
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 my_team_ids TEXT NOT NULL DEFAULT '',
                 manager_id TEXT NOT NULL DEFAULT '',
+                country TEXT NOT NULL DEFAULT '',
                 updated_on TEXT NOT NULL DEFAULT (datetime('now'))
             );
 

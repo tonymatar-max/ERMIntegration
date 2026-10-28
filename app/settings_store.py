@@ -404,10 +404,10 @@ def save_openrouter_settings(api_key: str, model: str):
 
 def get_user_prefs(user_id: int) -> dict:
     with db.get_db() as conn:
-        row = conn.execute("SELECT my_team_ids, manager_id FROM user_prefs WHERE user_id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT my_team_ids, manager_id, country FROM user_prefs WHERE user_id = ?", (user_id,)).fetchone()
         if not row:
-            return {"my_team_ids": "", "manager_id": ""}
-        return {"my_team_ids": row["my_team_ids"], "manager_id": row["manager_id"]}
+            return {"my_team_ids": "", "manager_id": "", "country": ""}
+        return {"my_team_ids": row["my_team_ids"], "manager_id": row["manager_id"], "country": row["country"] or ""}
 
 
 def save_user_prefs(user_id: int, my_team_ids: str, manager_id: str):
@@ -451,6 +451,22 @@ def save_user_manager(user_id: int, manager_id: str):
                 manager_id = excluded.manager_id, updated_on = datetime('now')
             """,
             (user_id, manager_id.strip()),
+        )
+
+
+def save_user_country(user_id: int, country: str):
+    """Admin-assigned country restriction for one user (see /admin/users) —
+    leaves my_team_ids/manager_id untouched. Empty means unrestricted by
+    country. Combined with manager_id as an AND filter in _visible_projects."""
+    with db.get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_prefs (user_id, country, updated_on)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                country = excluded.country, updated_on = datetime('now')
+            """,
+            (user_id, (country or "").strip()),
         )
 
 

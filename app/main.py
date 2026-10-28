@@ -88,6 +88,8 @@ class templates:
             context.setdefault("backups", backup.list_backups()[:10])
             context.setdefault("backup_settings", settings_store.get_backup_settings())
             context.setdefault("backup_effective_dir", backup.backups_dir())
+        if name == "users.html":
+            context.setdefault("countries", settings_store.list_countries())
         if name == "pp_report_months.html":
             # The KSA upload panel lives on this page, which is rendered from
             # several routes — inject its data here instead of in each one.
@@ -151,16 +153,42 @@ def _assigned_manager_id(user: dict) -> str:
     return settings_store.get_user_prefs(user["id"])["manager_id"]
 
 
+def _assigned_country(user: dict) -> str:
+    """The country an admin has restricted this user to (user_prefs.country —
+    see /admin/users), case-insensitive, or '' if unrestricted. Admins are
+    never restricted. Used to scope e.g. a KSA PM to all KSA work."""
+    if user["is_admin"]:
+        return ""
+    return (settings_store.get_user_prefs(user["id"]).get("country") or "").strip()
+
+
+def _ksa_visible(user: dict) -> bool:
+    """Whether the KSA workbook/timesheet data (which has no Redmine Project
+    Manager) should be merged in for this user: admins and unrestricted users,
+    and a user restricted specifically to the KSA country. A manager-restricted
+    user, or one restricted to a non-KSA country, never gets KSA data."""
+    if _assigned_manager_id(user):
+        return False
+    country = _assigned_country(user)
+    return country == "" or country.upper() == pp_report.KSA_COUNTRY.upper()
+
+
 def _visible_projects(projects: list, user: dict) -> list:
     """Hard-restricts a regular user to only the projects of their
-    admin-assigned Project Manager (see _assigned_manager_id) — other PMs'
-    projects never reach this user's browser. Admins, and any user nobody
-    has restricted yet, see every project (unrestricted is the default so
-    rolling this out doesn't silently lock out existing users)."""
+    admin-assigned Project Manager and/or country (see _assigned_manager_id /
+    _assigned_country) — other projects never reach this user's browser.
+    Admins, and any user nobody has restricted yet, see every project
+    (unrestricted is the default so rolling this out doesn't silently lock out
+    existing users). When both are set they combine (AND)."""
     manager_id = _assigned_manager_id(user)
-    if not manager_id:
-        return projects
-    return [p for p in projects if str(p.get("managerId") or "") == manager_id]
+    country = _assigned_country(user)
+    out = projects
+    if manager_id:
+        out = [p for p in out if str(p.get("managerId") or "") == manager_id]
+    if country:
+        cu = country.upper()
+        out = [p for p in out if (p.get("country") or "").strip().upper() == cu]
+    return out
 
 
 def _visible_timespent(timespent: list, visible_project_ids: set) -> list:
@@ -195,11 +223,18 @@ def _project_is_visible(project_id: int, user: dict) -> bool:
     restricted user reaching a project outside their assigned PM by calling
     the API directly, bypassing the Dashboard's already-filtered list."""
     manager_id = _assigned_manager_id(user)
-    if not manager_id:
+    country = _assigned_country(user)
+    if not manager_id and not country:
         return True
     projects, _ = settings_store.load_cache("projects")
     project = next((p for p in projects if p.get("id") == project_id), None)
-    return bool(project) and str(project.get("managerId") or "") == manager_id
+    if not project:
+        return False
+    if manager_id and str(project.get("managerId") or "") != manager_id:
+        return False
+    if country and (project.get("country") or "").strip().upper() != country.upper():
+        return False
+    return True
 
 
 def _visible_report_rows(rows: list, user: dict) -> list:
@@ -208,9 +243,14 @@ def _visible_report_rows(rows: list, user: dict) -> list:
     a LOCKED month's rows come from a frozen snapshot (build_report ignores
     the project list entirely once a month is locked)."""
     manager_id = _assigned_manager_id(user)
-    if not manager_id:
-        return rows
-    return [r for r in rows if str(r.get("managerId") or "") == manager_id]
+    country = _assigned_country(user)
+    out = rows
+    if manager_id:
+        out = [r for r in out if str(r.get("managerId") or "") == manager_id]
+    if country:
+        cu = country.upper()
+        out = [r for r in out if (r.get("country") or "").strip().upper() == cu]
+    return out
 
 
 def _refresh_timing_context() -> dict:
@@ -671,6 +711,7 @@ def users_create(
     is_admin: str = Form(""),
     manager_id: str = Form(""),
     email: str = Form(""),
+    country: str = Form(""),
 ):
     user = require_login(request)
     if not user:
@@ -681,6 +722,7 @@ def users_create(
     username = username.strip()
     manager_id = manager_id.strip()
     email = email.strip()
+    country = country.strip()
     error = None
     if len(username) < 3:
         error = "Username must be at least 3 characters."
@@ -695,14 +737,14 @@ def users_create(
 
     if not error:
         try:
-            new_id = auth.create_user(username, password, is_admin=bool(is_admin), manager_id=manager_id, email=email)
-            logger.info("User %r (id=%s, admin=%s, manager_id=%r, email set=%s) created by %r", username, new_id, bool(is_admin), manager_id, bool(email), user["username"])
+            new_id = auth.create_user(username, password, is_admin=bool(is_admin), manager_id=manager_id, email=email, country=country)
+            logger.info("User %r (id=%s, admin=%s, manager_id=%r, country=%r, email set=%s) created by %r", username, new_id, bool(is_admin), manager_id, country or "(none)", bool(email), user["username"])
         except ValueError as e:
             error = str(e)
 
     return templates.TemplateResponse(
         "users.html",
-        {"request": request, "user": user, "users": auth.list_users(), "error": error, "ok": None if error else f"User '{username}' created."},
+        {"request": request, "user": user, "users": auth.list_users(), "countries": settings_store.list_countries(), "error": error, "ok": None if error else f"User '{username}' created."},
     )
 
 
@@ -723,6 +765,35 @@ def users_set_email(request: Request, target_id: int, email: str = Form("")):
     else:
         auth.set_email(target_id, email)
         ok = "Email updated."
+    return templates.TemplateResponse(
+        "users.html",
+        {"request": request, "user": user, "users": auth.list_users(), "error": error, "ok": ok},
+    )
+
+
+@app.post("/admin/users/{target_id}/country", response_class=HTMLResponse)
+def users_set_country(request: Request, target_id: int, country: str = Form("")):
+    """Assigns (or clears) the country a regular user is hard-restricted to —
+    see _visible_projects / _ksa_visible. Blank clears it. A user set to KSA
+    sees all KSA work including the uploaded KSA workbook/timesheet data (which
+    has no Redmine Project Manager); combined with a Project Manager id, the two
+    restrictions apply together (AND)."""
+    user = require_login(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not user["is_admin"]:
+        return RedirectResponse("/dashboard")
+
+    country = country.strip()
+    error, ok = None, None
+    target = auth.get_user(target_id)
+    if not target:
+        error = "User not found."
+    else:
+        settings_store.save_user_country(target_id, country)
+        logger.info("Country restriction for %r set to %r by %r", target["username"], country or "(none)", user["username"])
+        ok = f"Country restriction updated for '{target['username']}'."
+
     return templates.TemplateResponse(
         "users.html",
         {"request": request, "user": user, "users": auth.list_users(), "error": error, "ok": ok},
@@ -1304,7 +1375,7 @@ def dashboard(request: Request):
         else:
             timespent = _visible_timespent(all_timespent, {p["id"] for p in visible_full})
         ksa_ta_projects = []
-        if not assigned_manager_id:
+        if _ksa_visible(user):
             # KSA consultants' uploaded timesheets (KSA isn't in Redmine) show
             # up in the Time Analysis tab alongside the Redmine time entries;
             # their projects are listed (with the KSA manager) so that tab's
@@ -1390,13 +1461,14 @@ def analysis_page(request: Request):
         projects = _drop_excluded_projects(projects)
         assigned = _assigned_manager_id(user)
         visible_full = _visible_projects(projects, user)
-        if not assigned:
-            ts = _visible_timespent(timespent, {p["id"] for p in visible_full})
-            ts = ts + pp_report.ksa_timesheet_entries_all(settings_store.distinct_timesheet_users(ts))
-        else:
+        if assigned:
             pm_ids = {p["id"] for p in visible_full}
             team = {t.get("user_id") for t in timespent if t.get("project_id") in pm_ids and t.get("user_id")}
             ts = [t for t in timespent if t.get("user_id") in team]
+        else:
+            ts = _visible_timespent(timespent, {p["id"] for p in visible_full})
+            if _ksa_visible(user):
+                ts = ts + pp_report.ksa_timesheet_entries_all(settings_store.distinct_timesheet_users(ts))
         report_month = (fetched_on or "")[:7] or resource_planning.current_month_str()
         data = analysis.build_analysis(visible_full, ts, report_month, settings_store.get_ksa_excluded_codes())
         trends = analysis.build_trends(visible_full, ts, report_month, 12)
@@ -1461,13 +1533,14 @@ def _data_quality_inputs(user: dict):
     projects = _drop_excluded_managers(projects)
     projects = _drop_excluded_projects(projects)
     visible = _visible_projects(projects, user)
-    if not _assigned_manager_id(user):
-        ts = _visible_timespent(timespent, {p["id"] for p in visible})
-        ts = ts + pp_report.ksa_timesheet_entries_all(settings_store.distinct_timesheet_users(ts))
-    else:
+    if _assigned_manager_id(user):
         pm_ids = {p["id"] for p in visible}
         team = {t.get("user_id") for t in timespent if t.get("project_id") in pm_ids and t.get("user_id")}
         ts = [t for t in timespent if t.get("user_id") in team]
+    else:
+        ts = _visible_timespent(timespent, {p["id"] for p in visible})
+        if _ksa_visible(user):
+            ts = ts + pp_report.ksa_timesheet_entries_all(settings_store.distinct_timesheet_users(ts))
     return visible, ts, fetched_on
 
 
@@ -2089,7 +2162,7 @@ def resource_planning_page(request: Request, import_ok: str = "", import_error: 
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         # KSA (from the uploaded workbook/timesheets) is added for anyone not
         # restricted to a single PM — KSA projects have no Redmine manager.
         projects, timespent = pp_report.with_ksa(projects, timespent)
@@ -2180,7 +2253,7 @@ def _utilization_report_data(user: dict, from_month: str, to_month: str):
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         # KSA (from the uploaded workbook/timesheets) is added for anyone not
         # restricted to a single PM — KSA projects have no Redmine manager.
         projects, timespent = pp_report.with_ksa(projects, timespent)
@@ -2243,7 +2316,7 @@ def resource_planning_export(request: Request):
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         # KSA (from the uploaded workbook/timesheets) is added for anyone not
         # restricted to a single PM — KSA projects have no Redmine manager.
         projects, timespent = pp_report.with_ksa(projects, timespent)
@@ -2281,7 +2354,7 @@ async def resource_planning_import(request: Request, file: UploadFile = File(...
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         projects, timespent = pp_report.with_ksa(projects, timespent)
     months = resource_planning.plan_months()
 
@@ -2375,7 +2448,7 @@ def _rp_mapping_options(user: dict):
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         projects, timespent = pp_report.with_ksa(projects, timespent)
     names = {}
     for r in resource_planning.build_plan(projects, timespent, resource_planning.plan_months()):
@@ -2496,7 +2569,7 @@ def resource_planning_template(request: Request):
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         projects, timespent = pp_report.with_ksa(projects, timespent)
     months = resource_planning.plan_months()
 
@@ -2598,7 +2671,7 @@ def _resource_plan_data(user: dict):
     timespent, _ = settings_store.load_cache("timespent")
     projects = _visible_projects(projects, user)
     timespent = _visible_timespent(timespent, {p["id"] for p in projects})
-    if not _assigned_manager_id(user):
+    if _ksa_visible(user):
         projects, timespent = pp_report.with_ksa(projects, timespent)
     return projects, timespent, fetched_on
 
