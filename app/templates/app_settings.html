@@ -4,8 +4,8 @@
 <div class="wrap wide">
   <h1>Shared Redmine connection</h1>
   <p class="hint">This connection is shared by every user of this app — everyone's "Refresh from Redmine" uses the same URL, API key, and saved query. There's no per-user Redmine key anymore; each user's own preferences (My Team, Project Manager id) live under <a href="/settings">Settings</a> instead.</p>
-  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
-  {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+  {% if error and not ai_section %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if ok and not ai_section %}<div class="msg ok">{{ ok }}</div>{% endif %}
   <form method="post" action="/app-settings">
     <label>Redmine URL</label>
     <input type="text" name="redmine_url" value="{{ settings.redmine_url }}" placeholder="https://redmine.seidor.es" required>
@@ -88,10 +88,12 @@
   </form>
 </div>
 
-<div class="wrap wide">
+<div class="wrap wide" id="ai-settings">
   <h1>OpenRouter (AI)</h1>
+  {% if ai_section and error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if ai_section and ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
   <p class="hint">Connect an <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> API key and pick a model to power the app's AI features. The key is stored encrypted, the same way the Redmine key is.</p>
-  <form method="post" action="/app-settings/openrouter">
+  <form method="post" action="/app-settings/openrouter#ai-settings">
     <label>Endpoint <span style="font-weight:400;color:var(--seidor-ink-soft);">(optional)</span></label>
     <input type="text" name="openrouter_base_url" value="{{ openrouter.base_url }}" placeholder="Blank = OpenRouter. Or e.g. http://127.0.0.1:3001/v1">
     <p class="hint">Any OpenAI-compatible endpoint, such as the Cobalt free-LLM gateway. The server running this app must be able to reach it. With a custom endpoint, the key below is that endpoint's key and the model ids are the ones it lists.</p>

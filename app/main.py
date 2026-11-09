@@ -639,17 +639,17 @@ def app_settings_openrouter_submit(request: Request, openrouter_api_key: str = F
 
     base_url = openrouter_base_url.strip().rstrip("/")
     if base_url and not base_url.lower().startswith(("http://", "https://")):
-        return templates.TemplateResponse("app_settings.html", {**base, "error": "The endpoint must start with http:// or https://.", "ok": None})
+        return templates.TemplateResponse("app_settings.html", {**base, "error": "The endpoint must start with http:// or https://.", "ok": None, "ai_section": True})
 
     if action == "test":
         existing = settings_store.get_openrouter_settings()
         key_to_test = openrouter_api_key.strip() or existing["api_key"]
         ok_conn, msg = openrouter_client.test_connection(key_to_test, base_url=base_url)
-        return templates.TemplateResponse("app_settings.html", {**base, "error": None if ok_conn else msg, "ok": msg if ok_conn else None})
+        return templates.TemplateResponse("app_settings.html", {**base, "error": None if ok_conn else msg, "ok": msg if ok_conn else None, "ai_section": True})
 
     settings_store.save_openrouter_settings(openrouter_api_key.strip(), openrouter_model, base_url)
     logger.info("AI settings saved by %r (endpoint=%r, model=%r, key %s)", user["username"], base_url or "OpenRouter", openrouter_model.strip(), "updated" if openrouter_api_key.strip() else "unchanged")
-    return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "OpenRouter settings saved."})
+    return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "AI settings saved.", "ai_section": True})
 
 
 @app.post("/app-settings/reset-stuck-refresh", response_class=HTMLResponse)
