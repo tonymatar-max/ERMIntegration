@@ -92,6 +92,10 @@
   <h1>OpenRouter (AI)</h1>
   <p class="hint">Connect an <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> API key and pick a model to power the app's AI features. The key is stored encrypted, the same way the Redmine key is.</p>
   <form method="post" action="/app-settings/openrouter">
+    <label>Endpoint <span style="font-weight:400;color:var(--seidor-ink-soft);">(optional)</span></label>
+    <input type="text" name="openrouter_base_url" value="{{ openrouter.base_url }}" placeholder="Blank = OpenRouter. Or e.g. http://127.0.0.1:3001/v1">
+    <p class="hint">Any OpenAI-compatible endpoint, such as the Cobalt free-LLM gateway. The server running this app must be able to reach it. With a custom endpoint, the key below is that endpoint's key and the model ids are the ones it lists.</p>
+
     <label>OpenRouter API key</label>
     <input type="password" name="openrouter_api_key" placeholder="{{ 'Leave blank to keep the saved key' if openrouter.api_key else 'sk-or-v1-…' }}">
     <p class="hint">Create one at openrouter.ai &rarr; Keys. Leave blank to keep the current key.</p>

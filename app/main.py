@@ -80,7 +80,7 @@ class templates:
         context.setdefault("nav_active", NAV_BY_TEMPLATE.get(name))
         if name == "app_settings.html":
             ors = settings_store.get_openrouter_settings()
-            context.setdefault("openrouter", {"model": ors["model"], "api_key": "•" * 12 if ors["api_key"] else ""})
+            context.setdefault("openrouter", {"model": ors["model"], "base_url": ors["base_url"], "api_key": "•" * 12 if ors["api_key"] else ""})
             smtp = settings_store.get_smtp_settings()
             context.setdefault("smtp", {**smtp, "password": "•" * 12 if smtp["password"] else ""})
             context.setdefault("digest", settings_store.get_digest_settings())
@@ -622,7 +622,8 @@ def app_settings_smtp_submit(request: Request, smtp_host: str = Form(""), smtp_p
 
 
 @app.post("/app-settings/openrouter", response_class=HTMLResponse)
-def app_settings_openrouter_submit(request: Request, openrouter_api_key: str = Form(""), openrouter_model: str = Form(""), action: str = Form("")):
+def app_settings_openrouter_submit(request: Request, openrouter_api_key: str = Form(""), openrouter_model: str = Form(""),
+                                   openrouter_base_url: str = Form(""), action: str = Form("")):
     """Save (or test) the OpenRouter API key + model used for AI features. The
     key is stored encrypted; leaving it blank keeps the saved one. 'Test' only
     validates the key (no tokens spent)."""
@@ -636,14 +637,18 @@ def app_settings_openrouter_submit(request: Request, openrouter_api_key: str = F
     settings["api_key"] = "•" * 12 if settings["api_key"] else ""
     base = {"request": request, "user": user, "settings": settings, **_refresh_timing_context()}
 
+    base_url = openrouter_base_url.strip().rstrip("/")
+    if base_url and not base_url.lower().startswith(("http://", "https://")):
+        return templates.TemplateResponse("app_settings.html", {**base, "error": "The endpoint must start with http:// or https://.", "ok": None})
+
     if action == "test":
         existing = settings_store.get_openrouter_settings()
         key_to_test = openrouter_api_key.strip() or existing["api_key"]
-        ok_conn, msg = openrouter_client.test_connection(key_to_test)
+        ok_conn, msg = openrouter_client.test_connection(key_to_test, base_url=base_url)
         return templates.TemplateResponse("app_settings.html", {**base, "error": None if ok_conn else msg, "ok": msg if ok_conn else None})
 
-    settings_store.save_openrouter_settings(openrouter_api_key.strip(), openrouter_model)
-    logger.info("OpenRouter settings saved by %r (model=%r, key %s)", user["username"], openrouter_model.strip(), "updated" if openrouter_api_key.strip() else "unchanged")
+    settings_store.save_openrouter_settings(openrouter_api_key.strip(), openrouter_model, base_url)
+    logger.info("AI settings saved by %r (endpoint=%r, model=%r, key %s)", user["username"], base_url or "OpenRouter", openrouter_model.strip(), "updated" if openrouter_api_key.strip() else "unchanged")
     return templates.TemplateResponse("app_settings.html", {**base, "error": None, "ok": "OpenRouter settings saved."})
 
 
@@ -1595,8 +1600,8 @@ async def api_ai_summary(request: Request):
         return JSONResponse(status_code=400, content={"detail": "No figures to summarize."})
     try:
         result = openrouter_client.chat(
-            ors["api_key"], ors["models"],
-            [
+            ors["api_key"], ors["models"], base_url=ors["base_url"],
+            messages=[
                 {"role": "system", "content": "You are a delivery-operations analyst for a SAP Business One consulting firm. Be concise, specific and numeric. No preamble, no restating the question."},
                 {"role": "user", "content": _build_ai_summary_prompt(stats, scope)},
             ],
@@ -1690,8 +1695,8 @@ async def api_data_quality_query(request: Request):
     context = data_quality.build_query_context(projects)
     try:
         result = openrouter_client.chat(
-            ors["api_key"], ors["models"],
-            [
+            ors["api_key"], ors["models"], base_url=ors["base_url"],
+            messages=[
                 {"role": "system", "content": "You are a delivery-operations analyst for a SAP Business One consulting firm. Answer ONLY from the portfolio snapshot provided. If the data can't answer the question, say so plainly. Be concise and numeric; cite project ids/names. Never invent figures."},
                 {"role": "user", "content": f"{context}\n\nQUESTION: {question}"},
             ],

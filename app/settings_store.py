@@ -358,9 +358,9 @@ def get_openrouter_settings() -> dict:
     The key is treated as unset if it can't be decrypted (app secret changed),
     same as the Redmine key."""
     with db.get_db() as conn:
-        row = conn.execute("SELECT openrouter_api_key_encrypted, openrouter_model FROM app_settings WHERE id = 1").fetchone()
+        row = conn.execute("SELECT openrouter_api_key_encrypted, openrouter_model, openrouter_base_url FROM app_settings WHERE id = 1").fetchone()
         if not row:
-            return {"api_key": "", "model": ""}
+            return {"api_key": "", "model": "", "models": [], "base_url": ""}
         api_key = ""
         if row["openrouter_api_key_encrypted"]:
             try:
@@ -368,7 +368,8 @@ def get_openrouter_settings() -> dict:
             except InvalidToken:
                 logger.error("Stored OpenRouter API key could not be decrypted (app secret changed) — treating it as unset.")
         model_text = row["openrouter_model"] or ""
-        return {"api_key": api_key, "model": model_text, "models": parse_openrouter_models(model_text)}
+        return {"api_key": api_key, "model": model_text, "models": parse_openrouter_models(model_text),
+                "base_url": (row["openrouter_base_url"] or "").strip()}
 
 
 def parse_openrouter_models(text: str) -> list:
@@ -384,21 +385,22 @@ def parse_openrouter_models(text: str) -> list:
     return parts[:3]
 
 
-def save_openrouter_settings(api_key: str, model: str):
+def save_openrouter_settings(api_key: str, model: str, base_url: str = ""):
     """Saves the OpenRouter model always; updates the API key only when a new
     one is supplied (blank keeps the stored key), mirroring the Redmine key."""
     encrypted = crypto.encrypt(api_key) if api_key else ""
     with db.get_db() as conn:
         conn.execute(
             """
-            INSERT INTO app_settings (id, openrouter_api_key_encrypted, openrouter_model, updated_on)
-            VALUES (1, ?, ?, datetime('now'))
+            INSERT INTO app_settings (id, openrouter_api_key_encrypted, openrouter_model, openrouter_base_url, updated_on)
+            VALUES (1, ?, ?, ?, datetime('now'))
             ON CONFLICT(id) DO UPDATE SET
                 openrouter_api_key_encrypted = CASE WHEN excluded.openrouter_api_key_encrypted = '' THEN app_settings.openrouter_api_key_encrypted ELSE excluded.openrouter_api_key_encrypted END,
                 openrouter_model = excluded.openrouter_model,
+                openrouter_base_url = excluded.openrouter_base_url,
                 updated_on = datetime('now')
             """,
-            (encrypted, (model or "").strip()),
+            (encrypted, (model or "").strip(), (base_url or "").strip().rstrip("/")),
         )
 
 

@@ -200,6 +200,10 @@ def _migrate(conn):
         conn.execute("ALTER TABLE app_settings ADD COLUMN openrouter_api_key_encrypted TEXT NOT NULL DEFAULT ''")
     if not _column_exists(conn, "app_settings", "openrouter_model"):
         conn.execute("ALTER TABLE app_settings ADD COLUMN openrouter_model TEXT NOT NULL DEFAULT ''")
+    # Optional OpenAI-compatible endpoint (e.g. the Cobalt free-LLM gateway);
+    # blank = OpenRouter.
+    if not _column_exists(conn, "app_settings", "openrouter_base_url"):
+        conn.execute("ALTER TABLE app_settings ADD COLUMN openrouter_base_url TEXT NOT NULL DEFAULT ''")
 
     # Per-user email, for notifications/alerts and so users can be reached.
     if not _column_exists(conn, "users", "email"):
